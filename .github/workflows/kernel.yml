@@ -124,7 +124,7 @@ jobs:
           python3 mkbootimg-repo/mkbootimg.py \
             --kernel kernel/Image-dtb \
             --ramdisk initramfs.cpio.gz \
-            --page_size 4096 \
+            --pagesize 4096 \
             --kernel_offset 0x8000 \
             --ramdisk_offset 0x1000000 \
             --second_offset 0xf00000 \
