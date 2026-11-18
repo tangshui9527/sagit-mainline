@@ -66,9 +66,11 @@ jobs:
         run: |
           cd kernel
           make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image dtbs
-          cat arch/arm64/boot/Image \
-              arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dtb > Image-dtb
-          ls -la arch/arm64/boot/Image Image-dtb
+          # sagit ABL expects: gzip(Image) followed by raw DTB after the gzip
+          # stream (same layout as the working R6 boot.img and TWRP sagit)
+          gzip -9 -c arch/arm64/boot/Image > Image.gz
+          cat Image.gz arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dtb > Image.gz-dtb
+          ls -la arch/arm64/boot/Image Image.gz-dtb
 
       - name: Get arm64 static busybox (prebuilt, no cross-compile)
         run: |
@@ -122,8 +124,9 @@ jobs:
           git clone --depth 1 https://android.googlesource.com/platform/system/tools/mkbootimg mkbootimg-repo \
             || git clone --depth 1 https://github.com/LineageOS/android_system_tools_mkbootimg mkbootimg-repo
           python3 mkbootimg-repo/mkbootimg.py \
-            --kernel kernel/Image-dtb \
+            --kernel kernel/Image.gz-dtb \
             --ramdisk initramfs.cpio.gz \
+            --base 0 \
             --pagesize 4096 \
             --kernel_offset 0x8000 \
             --ramdisk_offset 0x1000000 \
@@ -139,7 +142,7 @@ jobs:
           mkdir -p out
           cp kernel/arch/arm64/boot/Image out/
           cp kernel/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dtb out/
-          cp kernel/Image-dtb out/
+          cp kernel/Image.gz-dtb out/
           cp kernel/.config out/config-$(cd kernel && make -s kernelversion)
           cp initramfs.cpio.gz out/
           cp boot.img out/
