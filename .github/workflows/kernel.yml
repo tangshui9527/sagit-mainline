@@ -77,9 +77,11 @@ jobs:
           sudo apt-get update
           cd /tmp && apt-get download busybox-static:arm64
           mkdir busybox-root && dpkg -x busybox-static_*.deb busybox-root
-          file busybox-root/bin/busybox
+          BB=$(find busybox-root -type f -name busybox | head -1)
+          echo "busybox binary: $BB"
+          file "$BB"
           mkdir -p "$GITHUB_WORKSPACE/busybox-arm64"
-          cp busybox-root/bin/busybox "$GITHUB_WORKSPACE/busybox-arm64/busybox"
+          cp "$BB" "$GITHUB_WORKSPACE/busybox-arm64/busybox"
 
       - name: Assemble initramfs cpio
         run: |
