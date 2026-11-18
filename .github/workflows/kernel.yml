@@ -118,10 +118,10 @@ jobs:
 
       - name: Pack boot.img
         run: |
-          curl -fL -o mkbootimg.b64 "https://android.googlesource.com/platform/system/tools/mkbootimg/+/refs/heads/main/mkbootimg.py?format=TEXT" \
-            || curl -fL -o mkbootimg.b64 "https://android.googlesource.com/platform/system/tools/mkbootimg/+/refs/heads/master/mkbootimg.py?format=TEXT"
-          base64 -d mkbootimg.b64 > mkbootimg.py
-          python3 mkbootimg.py \
+          # AOSP mkbootimg.py imports its sibling `gki` package, so clone the whole repo
+          git clone --depth 1 https://android.googlesource.com/platform/system/tools/mkbootimg mkbootimg-repo \
+            || git clone --depth 1 https://github.com/LineageOS/android_system_tools_mkbootimg mkbootimg-repo
+          python3 mkbootimg-repo/mkbootimg.py \
             --kernel kernel/Image-dtb \
             --ramdisk initramfs.cpio.gz \
             --page_size 4096 \
