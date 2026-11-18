@@ -1,0 +1,43 @@
+#!/bin/sh
+# Mi 6 内核首启测试 initramfs /init（busybox 静态版）
+# 目标：USB ACM 串口(/dev/ttyGS0) 提供可交互 shell，验证内核存活与 UDC 枚举
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+/bin/busybox mkdir -p /proc /sys /dev /tmp /run /etc
+/bin/busybox --install -s
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mount -t configfs configfs /sys/kernel/config 2>/dev/null || mkdir -p /sys/kernel/config
+
+echo "sagit-mainline kernel smoke test init" > /dev/console
+echo "kernel: $(uname -a)" > /dev/console
+
+# USB gadget: ACM single function (idVendor 0525 idProduct a4a7)
+G=/sys/kernel/config/usb_gadget/g1
+mkdir -p "$G"
+echo 0x0525 > "$G/idVendor"
+echo 0xa4a7 > "$G/idProduct"
+mkdir -p "$G/strings/0x409"
+echo "sagit-mainline-ci" > "$G/strings/0x409/serialnumber"
+echo "sagit" > "$G/strings/0x409/manufacturer"
+echo "Mi6 kernel smoke test (ACM)" > "$G/strings/0x409/product"
+mkdir -p "$G/functions/acm.usb0"
+mkdir -p "$G/configs/c.1/strings/0x409"
+echo "ACM" > "$G/configs/c.1/strings/0x409/configuration"
+ln -s "$G/functions/acm.usb0" "$G/configs/c.1/acm.usb0" 2>/dev/null
+UDC=$(ls /sys/class/udc 2>/dev/null | head -1)
+if [ -n "$UDC" ]; then
+    echo "$UDC" > "$G/UDC" && echo "gadget bound to $UDC (ACM ready)" > /dev/console
+else
+    echo "WARN: no UDC found" > /dev/console
+fi
+
+# shell on serial gadget console + fb console
+(
+    sleep 1
+    setsid sh -c 'exec sh </dev/ttyGS0 >/dev/ttyGS0 2>&1' &
+) 2>/dev/null
+
+echo "init done; shell on ttyGS0 (USB ACM)" > /dev/console
+# keep pid1 alive
+while true; do sleep 3600; done

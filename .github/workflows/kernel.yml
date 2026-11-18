@@ -1,0 +1,150 @@
+name: kernel-build
+
+on:
+  push:
+    paths:
+      - '.github/workflows/**'
+      - 'configs/**'
+      - 'patches/**'
+      - 'initramfs/**'
+  workflow_dispatch:
+    inputs:
+      tree_ref:
+        description: 'ilertnost 树的 ref（默认固定 pin）'
+        required: false
+        default: 'ea08c09791cddbfc57c995e154c20d09738339a3'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TREE_REF: ${{ github.event.inputs.tree_ref || 'ea08c09791cddbfc57c995e154c20d09738339a3' }}
+      CROSS_COMPILE: aarch64-linux-gnu-
+      ARCH: arm64
+    steps:
+      - name: Checkout project repo
+        uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            flex bison bc libssl-dev libelf-dev cpio python3-dev \
+            build-essential dwarves zstd
+
+      - name: Clone kernel bring-up tree (pinned)
+        run: |
+          git clone --depth 1 https://github.com/ilertnost/kernel_xiaomi_msm8998-mainline kernel
+          cd kernel
+          echo "HEAD before checkout: $(git rev-parse HEAD)"
+          git fetch --depth 1 origin "$TREE_REF" && git checkout --detach FETCH_HEAD
+          git rev-parse HEAD
+
+      - name: Apply project patches (if any)
+        run: |
+          cd kernel
+          if compgen -G "../patches/*.patch" > /dev/null; then
+            for p in ../patches/*.patch; do
+              echo "== applying $p"
+              git apply --3way "$p" || git apply "$p"
+            done
+          else
+            echo "no patches"
+          fi
+
+      - name: Configure (sagit_defconfig + mi6.fragment)
+        run: |
+          cd kernel
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- sagit_defconfig
+          ./scripts/kconfig/merge_config.sh -m .config ../configs/mi6.fragment
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          grep -E 'CONFIG_USB_CONFIGFS_ACM|CONFIG_USB_F_ACM|CONFIG_USB_U_SERIAL|CONFIG_USB_CONFIGFS_RNDIS' .config || true
+
+      - name: Build kernel and DTB
+        run: |
+          cd kernel
+          make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image dtbs
+          cat arch/arm64/boot/Image \
+              arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dtb > Image-dtb
+          ls -la arch/arm64/boot/Image Image-dtb
+
+      - name: Build busybox initramfs (ACM smoke test)
+        run: |
+          curl -fL -o busybox.tar.bz2 https://busybox.net/downloads/busybox-1.36.1.tar.bz2
+          tar -xjf busybox.tar.bz2
+          cd busybox-1.36.1
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+          sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
+          make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
+          file busybox
+
+      - name: Assemble initramfs cpio
+        run: |
+          python3 - <<'EOF'
+          import struct
+          ino = [3000]
+          out = bytearray()
+          def entry(name, mode, data=b'', nlink=1):
+              ino[0] += 1
+              n = name.encode()
+              # newc header: 14 fields x 4 bytes, big-endian
+              out.extend(struct.pack('>14I', 0x070701, ino[0], mode, 0, 0, nlink,
+                                     0, len(data), 0, 0, 0, 0, len(n), 0))
+              out.extend(n)
+              while len(out) % 4: out.append(0)
+              out.extend(data)
+              while len(out) % 4: out.append(0)
+          def dir(name): entry(name, 0o040755, b'', 2)
+          for d in ['bin', 'sbin', 'dev', 'proc', 'sys', 'tmp', 'run', 'etc',
+                    'sys/kernel', 'sys/kernel/config', 'sys/class']:
+              dir(d)
+          entry('bin/busybox', 0o100755, open('busybox-1.36.1/busybox', 'rb').read())
+          entry('init', 0o100755, open('initramfs/init', 'rb').read())
+          # trailer
+          ino[0] += 1
+          out.extend(struct.pack('>14I', 0x070701, ino[0], 0, 0, 0, 1, 0, 0,
+                                 0, 0, 0, 0, 11, 0) + b'TRAILER!!!\0')
+          while len(out) % 512: out.append(0)
+          open('initramfs.cpio', 'wb').write(bytes(out))
+          print('cpio bytes:', len(out))
+          EOF
+          gzip -9 -c initramfs.cpio > initramfs.cpio.gz
+          ls -la initramfs.cpio.gz
+
+      - name: Pack boot.img
+        run: |
+          curl -fL -o mkbootimg.b64 "https://android.googlesource.com/platform/system/tools/mkbootimg/+/refs/heads/main/mkbootimg.py?format=TEXT" \
+            || curl -fL -o mkbootimg.b64 "https://android.googlesource.com/platform/system/tools/mkbootimg/+/refs/heads/master/mkbootimg.py?format=TEXT"
+          base64 -d mkbootimg.b64 > mkbootimg.py
+          python3 mkbootimg.py \
+            --kernel kernel/Image-dtb \
+            --ramdisk initramfs.cpio.gz \
+            --page_size 4096 \
+            --kernel_offset 0x8000 \
+            --ramdisk_offset 0x1000000 \
+            --second_offset 0xf00000 \
+            --tags_offset 0x100 \
+            --board sagit \
+            --cmdline "clk_ignore_unused console=tty1" \
+            --output boot.img
+          ls -la boot.img
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p out
+          cp kernel/arch/arm64/boot/Image out/
+          cp kernel/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dtb out/
+          cp kernel/Image-dtb out/
+          cp kernel/.config out/config-$(cd kernel && make -s kernelversion)
+          cp initramfs.cpio.gz out/
+          cp boot.img out/
+          cd kernel && git rev-parse HEAD > ../out/kernel-commit.txt && cd ..
+          cp busybox-1.36.1/busybox out/busybox-aarch64-static
+          ls -la out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sagit-kernel-${{ env.TREE_REF }}
+          path: out/
