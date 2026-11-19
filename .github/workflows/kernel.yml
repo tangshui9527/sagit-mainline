@@ -69,7 +69,7 @@ jobs:
           KVER=$(make -s ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- kernelversion)
           make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- INSTALL_MOD_PATH=../modules modules_install
-          tar -czf ../modules.tar.gz -C modules lib
+          tar -czf ../modules.tar.gz -C ../modules lib
           echo "KVER=$KVER" > ../kver.txt
           # sagit ABL expects: gzip(Image) followed by raw DTB after the gzip
           # stream (same layout as the working R6 boot.img and TWRP sagit)
