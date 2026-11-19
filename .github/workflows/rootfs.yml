@@ -21,10 +21,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             mmdebstrap binfmt-support \
             e2fsprogs android-sdk-libsparse-utils \
-            debian-archive-keyring jq \
-            qemu-user-static || \
-          sudo apt-get install -y --no-install-recommends qemu-user-binfmt
-          test /usr/bin/qemu-aarch64-static -e /proc/sys/fs/binfmt_misc/status || true
+            debian-archive-keyring jq
+          # new Ubuntu renamed qemu-user-static -> qemu-user-binfmt
+          sudo apt-get install -y --no-install-recommends qemu-user-static \
+            || sudo apt-get install -y --no-install-recommends qemu-user-binfmt
+          which mmdebstrap && mmdebstrap --version
 
       - name: Download latest kernel artifacts (Image/modules/boot-rescue)
         env:
