@@ -1,0 +1,13 @@
+[connection]
+id=mi6-usb
+uuid=ae8e5af6-3329-45a2-b858-b879e3a70d90
+type=ethernet
+interface-name=usb0
+autoconnect=true
+[ethernet]
+[ipv4]
+method=manual
+address1=172.16.42.1/16
+never-default=true
+[ipv6]
+method=disabled

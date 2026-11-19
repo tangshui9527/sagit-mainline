@@ -1,0 +1,10 @@
+[Unit]
+Description=Expand Mi 6 rootfs ext4 to userdata capacity
+After=local-fs.target
+ConditionPathExists=!/var/lib/mi6/rootfs-grown
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/mi6-grow-rootfs
+TimeoutStartSec=180
+[Install]
+WantedBy=multi-user.target

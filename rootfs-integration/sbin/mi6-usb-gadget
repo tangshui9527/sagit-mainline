@@ -1,0 +1,32 @@
+#!/bin/sh
+# Composite USB gadget: ACM (serial console) + NCM (modern hosts) + RNDIS (legacy)
+set -eu
+[ -d /sys/kernel/config ] || mount -t configfs configfs /sys/kernel/config
+G=/sys/kernel/config/usb_gadget/mi6
+if [ -s "$G/UDC" ] && [ -n "$(cat "$G/UDC")" ]; then exit 0; fi
+mkdir -p "$G"
+printf '0x1d6b' > "$G/idVendor"   # Linux Foundation
+printf '0x0104' > "$G/idProduct" # Multifunction Composite Gadget
+printf '0x0200' > "$G/bcdUSB"
+mkdir -p "$G/strings/0x409" "$G/configs/c.1/strings/0x409"
+printf 'mi6-%s' "$(cat /etc/hostname 2>/dev/null || echo sagit)" > "$G/strings/0x409/serialnumber"
+printf 'Xiaomi' > "$G/strings/0x409/manufacturer"
+printf 'Mi 6 Debian 13 (ACM+NCM+RNDIS)' > "$G/strings/0x409/product"
+echo 'Composite' > "$G/configs/c.1/strings/0x409/configuration"
+echo 500 > "$G/configs/c.1/MaxPower"
+mkdir -p "$G/functions/acm.usb0" "$G/functions/ncm.usb0" "$G/functions/rndis.usb0"
+printf '02:06:00:00:00:01' > "$G/functions/ncm.usb0/dev_addr"
+printf '02:06:00:00:00:02' > "$G/functions/ncm.usb0/host_addr"
+printf '02:06:00:00:00:03' > "$G/functions/rndis.usb0/dev_addr"
+printf '02:06:00:00:00:04' > "$G/functions/rndis.usb0/host_addr"
+ln -sfn "$G/functions/acm.usb0"  "$G/configs/c.1/acm.usb0"
+ln -sfn "$G/functions/ncm.usb0"  "$G/configs/c.1/ncm.usb0"
+ln -sfn "$G/functions/rndis.usb0" "$G/configs/c.1/rndis.usb0"
+# Windows RNDIS auto-driver via MS OS descriptors
+printf '1' > "$G/os_desc/use"; printf '0xcd' > "$G/os_desc/b_vendor_code"; printf 'MSFT100' > "$G/os_desc/qw_sign"
+printf 'RNDIS' > "$G/functions/rndis.usb0/os_desc/interface.rndis/compatible_id"
+printf '5162001' > "$G/functions/rndis.usb0/os_desc/interface.rndis/sub_compatible_id"
+ln -sfn "$G/configs/c.1" "$G/os_desc/c.1"
+UDC=$(ls /sys/class/udc 2>/dev/null | head -1)
+[ -n "$UDC" ] && echo "$UDC" > "$G/UDC" && exit 0
+echo 'No UDC found' >&2; exit 1

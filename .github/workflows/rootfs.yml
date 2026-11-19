@@ -1,0 +1,224 @@
+name: rootfs-build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rootfs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      TREE_REF: ea08c09791cddbfc57c995e154c20d09738339a3
+      ROOT_UUID: 1004ca69-66ba-4341-8e6c-a61e76a96a2b
+      INITIAL_PW: sagit1234
+    steps:
+      - name: Checkout project repo
+        uses: actions/checkout@v4
+
+      - name: Install host deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            mmdebstrap qemu-user-static binfmt-support \
+            e2fsprogs android-sdk-libsparse-utils \
+            debian-archive-keyring jq
+
+      - name: Download latest kernel artifacts (Image/modules/boot-rescue)
+        run: |
+          RUN_ID=$(gh run list -R "$GITHUB_REPOSITORY" --workflow kernel.yml --status success -L 1 --json databaseId --jq '.[0].databaseId')
+          echo "using kernel run: $RUN_ID"
+          gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" \
+            -n "sagit-kernel-$TREE_REF" -D kernel-artifacts
+          test -f kernel-artifacts/modules.tar.gz || {
+            echo "kernel artifact lacks modules.tar.gz; rerun kernel.yml first"; exit 1; }
+          cat kernel-artifacts/kver.txt
+          ls -la kernel-artifacts/
+
+      - name: Bootstrap Debian 13 arm64 rootfs (mmdebstrap)
+        run: |
+          sudo mmdebstrap --arch=arm64 --variant=apt --mode=sudo \
+            --include="systemd,systemd-sysv,dbus,openssh-server,network-manager,wpasupplicant,initramfs-tools,e2fsprogs,python3,chrony,kmod,sudo,ca-certificates,iproute2,iputils-ping,udev,nano,udhcpd,locales" \
+            trixie rootfs http://deb.debian.org/debian
+          # Qualcomm userspace (may not all exist in trixie; record what lands)
+          sudo chroot rootfs /bin/sh -c '
+            DEBIAN_FRONTEND=noninteractive apt-get update -qq &&
+            for p in qrtr pd-mapper rmtfs tqftpserv; do
+              apt-get install -y --no-install-recommends $p || echo "SKIP: $p not in trixie";
+            done'
+          echo "qualcomm userspace:" && ls rootfs/usr/bin | grep -E '^(qrtr|pd-mapper|rmtfs|tqftpserv)' || true
+
+      - name: Integrate device config
+        run: |
+          # identity / fstab
+          sudo cp rootfs-integration/fstab    rootfs/etc/fstab
+          sudo cp rootfs-integration/hostname rootfs/etc/hostname
+          sudo cp rootfs-integration/hosts    rootfs/etc/hosts
+          # network: usb0 static + NM managed wifi
+          sudo mkdir -p rootfs/etc/NetworkManager/system-connections rootfs/etc/NetworkManager/conf.d
+          sudo cp rootfs-integration/NetworkManager/mi6-usb.nmconnection rootfs/etc/NetworkManager/system-connections/
+          sudo chmod 600 rootfs/etc/NetworkManager/system-connections/mi6-usb.nmconnection
+          sudo cp rootfs-integration/NetworkManager/99-mi6-ncm-mac.conf rootfs/etc/NetworkManager/conf.d/ || true
+          # users: root + mi6 (documented initial password, change after first login)
+          sudo chroot rootfs /bin/bash -c "
+            echo root:$INITIAL_PW | chpasswd
+            if ! id mi6 >/dev/null 2>&1; then useradd -m -s /bin/bash mi6; fi
+            echo mi6:$INITIAL_PW | chpasswd
+            usermod -aG sudo mi6"
+          sudo cp rootfs-integration/sudoers-mi6 rootfs/etc/sudoers.d/mi6
+          sudo chmod 440 rootfs/etc/sudoers.d/mi6
+          # ssh: fresh host keys on first boot
+          sudo sh -c 'rm -f rootfs/etc/ssh/ssh_host_*'
+          sudo mkdir -p rootfs/etc/systemd/system/ssh.service.d
+          sudo cp rootfs-integration/ssh/ssh-keygen-override.conf rootfs/etc/systemd/system/ssh.service.d/override.conf
+          # mi6 services + scripts
+          sudo cp rootfs-integration/sbin/mi6-usb-gadget   rootfs/usr/local/sbin/
+          sudo cp rootfs-integration/sbin/mi6-grow-rootfs  rootfs/usr/local/sbin/
+          sudo chmod 755 rootfs/usr/local/sbin/mi6-usb-gadget rootfs/usr/local/sbin/mi6-grow-rootfs
+          sudo mkdir -p rootfs/etc/systemd/system/multi-user.target.wants
+          sudo cp rootfs-integration/systemd/mi6-usb-gadget.service  rootfs/etc/systemd/system/
+          sudo cp rootfs-integration/systemd/mi6-grow-rootfs.service rootfs/etc/systemd/system/
+          sudo ln -sf /etc/systemd/system/mi6-usb-gadget.service  rootfs/etc/systemd/system/multi-user.target.wants/mi6-usb-gadget.service
+          sudo ln -sf /etc/systemd/system/mi6-grow-rootfs.service rootfs/etc/systemd/system/multi-user.target.wants/mi6-grow-rootfs.service
+          sudo ln -sf /lib/systemd/system/ssh.service             rootfs/etc/systemd/system/multi-user.target.wants/ssh.service
+          sudo ln -sf /lib/systemd/system/NetworkManager.service  rootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service
+          sudo ln -sf /lib/systemd/system/systemd-resolved.service rootfs/etc/systemd/system/multi-user.target.wants/systemd-resolved.service
+          sudo ln -sf /lib/systemd/system/chrony.service           rootfs/etc/systemd/system/multi-user.target.wants/chrony.service
+          sudo ln -sf /lib/systemd/system/wpa_supplicant.service   rootfs/etc/systemd/system/multi-user.target.wants/wpa_supplicant.service
+          # serial login over USB ACM (ttyGS0) + NCM DHCP for the host
+          sudo mkdir -p rootfs/etc/systemd/system/getty.target.wants rootfs/var/lib
+          sudo ln -sf /lib/systemd/system/serial-getty@.service rootfs/etc/systemd/system/getty.target.wants/serial-getty@ttyGS0.service
+          sudo cp rootfs-integration/udhcpd.conf rootfs/etc/udhcpd.conf
+          # keep initramfs lean-but-complete
+          sudo sh -c 'echo "MODULES=most" > rootfs/etc/initramfs-tools/conf.d/mi6'
+
+      - name: Install firmware (postmarketOS packages, downloaded at build time)
+        run: |
+          python3 - <<'EOF'
+          import urllib.request, io, tarfile, zlib, sys
+          MIRROR="https://mirror.postmarketos.org/postmarketos"
+          WANT=["firmware-xiaomi-sagit","soc-qcom-msm8998-nonfree-firmware",
+                "firmware-qcom-adreno-a530","linux-firmware-qca"]
+          rel=None
+          for cand in ["v25.12","v25.06","v24.12","edge"]:
+              try:
+                  urllib.request.urlopen(f"{MIRROR}/{cand}/aarch64/APKINDEX.tar.gz", timeout=20).read()
+                  rel=cand; break
+              except Exception as e:
+                  print(cand, "unavailable:", e)
+          assert rel, "no pmOS release reachable"
+          print("pmOS release:", rel)
+          idx=urllib.request.urlopen(f"{MIRROR}/{rel}/aarch64/APKINDEX.tar.gz").read()
+          tf=tarfile.open(fileobj=io.BytesIO(idx), mode="r:gz")
+          apkindex=tf.extractfile("APKINDEX").read().decode()
+          want_files={}
+          cur={}
+          for line in apkindex.splitlines():
+              if not line.strip():
+                  n=cur.get("P"); v=cur.get("V")
+                  if n in WANT and v: want_files[n]=f"{n}-{v}.apk"
+                  cur={}
+              else:
+                  if len(line)>1 and line[1]==":" and line[0] in "PVATIS":
+                      cur[line[0]]=line[2:]
+          print("resolved:", want_files)
+          missing=[w for w in WANT if w not in want_files]
+          if missing: print("MISSING (recorded):", missing)
+          for name,fn in want_files.items():
+              url=f"{MIRROR}/{rel}/aarch64/{fn}"
+              print("fetch", url)
+              blob=urllib.request.urlopen(url).read()
+              # apk = concatenated gzip streams (signature, control, data)
+              pos=0; data_tar=None
+              while pos < len(blob):
+                  d=zlib.decompressobj(31); out=d.decompress(blob[pos:]); out+=d.flush()
+                  consumed=len(blob)-pos-len(d.unused_data)
+                  try:
+                      t=tarfile.open(fileobj=io.BytesIO(out), mode="r:")
+                      names=t.getnames()
+                      if any(n.startswith("./usr") or n.startswith("./lib") or n.startswith("usr") for n in names):
+                          data_tar=io.BytesIO(out)
+                  except tarfile.ReadError:
+                      pass
+                  pos+=consumed
+              assert data_tar, f"no data stream in {fn}"
+              t=tarfile.open(fileobj=data_tar, mode="r:")
+              t.extractall("firmware-extract")
+              print("extracted", fn)
+          EOF
+          sudo rsync -a firmware-extract/usr/lib/firmware/ rootfs/lib/firmware/ 2>/dev/null || \
+            sudo rsync -a firmware-extract/lib/firmware/ rootfs/lib/firmware/
+          ls rootfs/lib/firmware/ | head -20
+          test -d rootfs/lib/firmware/ath10k/WCN3990 && echo "WCN3990 firmware present" || echo "WARN: WCN3990 firmware missing"
+
+      - name: Install kernel modules + depmod
+        run: |
+          KVER=$(cat kernel-artifacts/kver.txt)
+          sudo tar -xzf kernel-artifacts/modules.tar.gz -C rootfs/
+          sudo chroot rootfs depmod -a "$KVER"
+          sudo mkdir -p rootfs/boot
+          sudo cp kernel-artifacts/Image rootfs/boot/vmlinuz-$KVER
+          sudo cp kernel-artifacts/msm8998-xiaomi-sagit.dtb rootfs/boot/
+          sudo cp kernel-artifacts/msm8998-xiaomi-sagit.dtb rootfs/boot/msm8998-xiaomi-sagit.dtb
+          echo "modules installed for $KVER"
+
+      - name: Build Debian initramfs (in chroot) and pack boot-debian.img
+        run: |
+          KVER=$(cat kernel-artifacts/kver.txt)
+          sudo chroot rootfs update-initramfs -c -k "$KVER"
+          ls -la rootfs/boot/initrd.img-$KVER
+          git clone --depth 1 https://android.googlesource.com/platform/system/tools/mkbootimg mkbootimg-repo \
+            || git clone --depth 1 https://github.com/LineageOS/android_system_tools_mkbootimg mkbootimg-repo
+          python3 mkbootimg-repo/mkbootimg.py \
+            --kernel kernel-artifacts/Image.gz-dtb \
+            --ramdisk rootfs/boot/initrd.img-$KVER \
+            --base 0 --pagesize 4096 \
+            --kernel_offset 0x8000 \
+            --ramdisk_offset 0x4000000 \
+            --second_offset 0xf00000 \
+            --tags_offset 0x100 \
+            --board sagit \
+            --cmdline "clk_ignore_unused root=UUID=$ROOT_UUID rw rootwait loglevel=7" \
+            --output boot-debian.img
+          python3 - <<'EOF'
+          import struct, os
+          d = bytearray(open('boot-debian.img','rb').read())
+          d[28:32] = (0xf00000).to_bytes(4, 'little')
+          open('boot-debian.img','wb').write(bytes(d))
+          ks,ka,rs,ra,ss,sa,ta,ps,_,_ = struct.unpack('<10I', d[8:48])
+          assert (ka,ra,sa,ta,ps) == (0x8000,0x4000000,0xf00000,0x100,4096), 'header mismatch'
+          print('boot-debian.img: %d bytes, kernel %d@0x8000 ramdisk %d@0x4000000' % (os.path.getsize('boot-debian.img'), ks, rs))
+          EOF
+
+      - name: Build ext4 image and convert to sparse
+        run: |
+          sudo mke2fs -F -q -b 4096 -U "$ROOT_UUID" -I 256 \
+            -O metadata_csum,64bit -E lazy_itable_init=0 \
+            -d rootfs/ rootfs.img 8G
+          sudo e2fsck -f -y rootfs.img >/dev/null 2>&1 || true
+          img2simg -b 4096 rootfs.img userdata-debian.simg
+          ls -la rootfs.img userdata-debian.simg
+
+      - name: Collect artifacts + manifest
+        run: |
+          mkdir -p out
+          cp userdata-debian.simg out/
+          cp boot-debian.img out/
+          cp kernel-artifacts/boot.img out/boot-rescue.img
+          KVER=$(cat kernel-artifacts/kver.txt)
+          {
+            echo "kernel: $KVER (ilertnost @ $TREE_REF)"
+            echo "rootfs: debian trixie arm64 (mmdebstrap)"
+            echo "rootfs.img  sha256: $(sha256sum rootfs.img | cut -d' ' -f1)"
+            echo "userdata-debian.simg sha256: $(sha256sum userdata-debian.simg | cut -d' ' -f1)"
+            echo "boot-debian.img sha256: $(sha256sum boot-debian.img | cut -d' ' -f1)"
+            echo "boot-rescue.img sha256: $(sha256sum out/boot-rescue.img | cut -d' ' -f1)"
+            echo "initial credentials: root / mi6 = $INITIAL_PW (CHANGE ON FIRST LOGIN)"
+            echo "network: usb0 static 172.16.42.1/16 (NCM/RNDIS), wifi via NetworkManager"
+          } > out/MANIFEST.txt
+          cat out/MANIFEST.txt
+          ls -la out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sagit-debian13-rootfs
+          path: out/

@@ -1,0 +1,12 @@
+[Unit]
+Description=Xiaomi Mi 6 USB composite gadget (ACM+NCM+RNDIS)
+After=systemd-udev-trigger.service
+Before=NetworkManager.service
+ConditionPathExists=/sys/class/udc
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/mi6-usb-gadget
+RemainAfterExit=yes
+TimeoutStartSec=30
+[Install]
+WantedBy=multi-user.target
