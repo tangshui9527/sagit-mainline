@@ -97,105 +97,87 @@ jobs:
           # keep initramfs lean-but-complete
           sudo sh -c 'echo "MODULES=most" > rootfs/etc/initramfs-tools/conf.d/mi6'
 
-      - name: Install firmware (postmarketOS + Alpine packages via apk.static)
+      - name: Install firmware (fetch apk files directly, extract firmware only)
         run: |
           python3 - <<'EOF'
-          import urllib.request, io, tarfile, subprocess, os, sys
+          import urllib.request, io, tarfile, os
 
-          def resolve_apk(index_url, pkg):
-              idx = tarfile.open(fileobj=io.BytesIO(urllib.request.urlopen(index_url).read()), mode="r:gz")
-              text = idx.extractfile("APKINDEX").read().decode()
+          # We only want firmware FILES, not the runtime daemons pmOS firmware
+          # packages drag in as dependencies -- so no apk dependency resolution.
+          REPOS = [
+            ("https://mirror.postmarketos.org/postmarketos", ["v25.12","v25.06","v24.12"],
+             ["firmware-xiaomi-sagit","soc-qcom-msm8998-nonfree-firmware","firmware-qcom-adreno-a530"]),
+            ("https://dl-cdn.alpinelinux.org/alpine", ["v3.23","v3.22","v3.21"],
+             ["linux-firmware-qca"]),
+          ]
+          os.makedirs("fw-root", exist_ok=True)
+
+          def find_repo(base, rels):
+              for rel in rels:
+                  try:
+                      urllib.request.urlopen(f"{base}/{rel}/aarch64/APKINDEX.tar.gz", timeout=20).read()
+                      return rel
+                  except Exception as e:
+                      print(f"{base}/{rel}: {e}")
+              raise SystemExit(f"no usable release under {base}")
+
+          def resolve(index_url, pkg):
+              tf = tarfile.open(fileobj=io.BytesIO(urllib.request.urlopen(index_url).read()), mode="r:gz")
+              text = tf.extractfile("APKINDEX").read().decode()
               cur = {}
               for line in text.splitlines():
                   if not line.strip():
-                      n, v = cur.get("P"), cur.get("V")
-                      if n == pkg and v:
-                          return f"{n}-{v}.apk"
+                      if cur.get("P") == pkg and cur.get("V"):
+                          return f"{cur['P']}-{cur['V']}.apk"
                       cur = {}
                   elif len(line) > 1 and line[1] == ":" and line[0] in "PV":
                       cur[line[0]] = line[2:]
               return None
 
-          def extract_gzip_members(blob):
-              """apk v2 = raw signature + gzip'd control + gzip'd data; scan for gzip magic."""
-              out = []
-              i = blob.find(b"\x1f\x8b")
+          def extract_firmware(apk_blob, dest):
+              # apk v2 = raw signature, then gzip'd control tar, then gzip'd data tar.
+              # Extract every file that lives under usr/ or lib/ (firmware lives there).
+              n_extracted = 0
+              i = apk_blob.find(b"\x1f\x8b")
               while i >= 0:
                   try:
-                      tf = tarfile.open(fileobj=io.BytesIO(blob[i:]), mode="r:gz")
-                      names = tf.getnames()
-                      out.append((i, tf, names))
-                      break  # first gzip member that parses as tar is enough per stream
+                      tf = tarfile.open(fileobj=io.BytesIO(apk_blob[i:]), mode="r:gz")
+                      for m in tf.getmembers():
+                          name = m.name.removeprefix("./")
+                          if m.isfile() and (name.startswith("usr/") or name.startswith("lib/")):
+                              out = os.path.join(dest, name)
+                              os.makedirs(os.path.dirname(out), exist_ok=True)
+                              with open(out, "wb") as f:
+                                  f.write(tf.extractfile(m).read())
+                              n_extracted += 1
+                      i = apk_blob.find(b"\x1f\x8b", i + tf.offset)
                   except Exception:
-                      i = blob.find(b"\x1f\x8b", i + 1)
-              return out
+                      i = apk_blob.find(b"\x1f\x8b", i + 1)
+              return n_extracted
 
-          # 1) fetch apk.static (host tool) from Alpine
-          alpine = "https://dl-cdn.alpinelinux.org/alpine"
-          apktool = None
-          for rel in ["latest-stable", "v3.23", "v3.22"]:
-              url = f"{alpine}/{rel}/main/x86_64/APKINDEX.tar.gz"
-              try:
-                  fn = resolve_apk(url, "apk-tools-static")
-                  if fn:
-                      apktool = f"{alpine}/{rel}/main/x86_64/{fn}"
-                      break
-              except Exception as e:
-                  print(rel, "index failed:", e)
-          assert apktool, "apk-tools-static not found"
-          print("apk tool:", apktool)
-          blob = urllib.request.urlopen(apktool).read()
-          for off, tf, names in extract_gzip_members(blob):
-              if any("apk.static" in n for n in names):
-                  for n in names:
-                      if n.endswith("apk.static"):
-                          f = tf.extractfile(n)
-                          open("apk.static", "wb").write(f.read())
-                          os.chmod("apk.static", 0o755)
-                          print("got ./apk.static")
-                          break
-                  break
-          assert os.path.exists("apk.static"), "apk.static not extracted"
-
-          # 2) resolve firmware packages across pmOS + Alpine repos
-          pmos = "https://mirror.postmarketos.org/postmarketos"
-          rel = None
-          for cand in ["v25.12", "v25.06", "v24.12"]:
-              try:
-                  urllib.request.urlopen(f"{pmos}/{cand}/aarch64/APKINDEX.tar.gz", timeout=20).read()
-                  rel = cand; break
-              except Exception:
-                  pass
-          assert rel, "no pmOS release reachable"
-          arel = None
-          for cand in ["v3.23", "v3.22", "v3.21"]:
-              try:
-                  urllib.request.urlopen(f"{alpine}/{cand}/main/aarch64/APKINDEX.tar.gz", timeout=20).read()
-                  arel = cand; break
-              except Exception:
-                  pass
-          assert arel, "no alpine release reachable"
-          print("pmOS:", rel, " Alpine:", arel)
-          missing = []
-          with open("fw-repos", "w") as f:
-              f.write(f"{pmos}/{rel}\n{alpine}/{arel}/main\n{alpine}/{arel}/community\n")
-          # 3) install into staging root
-          subprocess.run(["sudo", "./apk.static", "--arch", "aarch64",
-                          "--root", os.path.abspath("fw-root"), "--initdb",
-                          "--no-scripts", "--allow-untrusted",
-                          "--repositories-file", "fw-repos",
-                          "add", "firmware-xiaomi-sagit",
-                          "soc-qcom-msm8998-nonfree-firmware",
-                          "firmware-qcom-adreno-a530",
-                          "linux-firmware-qca"], check=True)
-          print("firmware tree:")
-          subprocess.run(["find", "fw-root/usr/lib/firmware", "-maxdepth", "3"], check=False)
+          total = 0
+          for base, rels, pkgs in REPOS:
+              rel = find_repo(base, rels)
+              idx = f"{base}/{rel}/aarch64/APKINDEX.tar.gz"
+              print(f"repo: {base}/{rel}")
+              for pkg in pkgs:
+                  fn = resolve(idx, pkg)
+                  if not fn:
+                      print(f"MISSING: {pkg} (recorded)"); continue
+                  url = f"{base}/{rel}/aarch64/{fn}"
+                  print("fetch:", url)
+                  blob = urllib.request.urlopen(url).read()
+                  n = extract_firmware(blob, "fw-root")
+                  total += n
+                  print(f"  extracted {n} files from {fn}")
+          print("total firmware files:", total)
+          assert total > 10, "too few firmware files extracted"
           EOF
-          sudo rsync -a fw-root/usr/lib/firmware/ rootfs/lib/firmware/
+          sudo rsync -a fw-root/usr/ rootfs/usr/
+          sudo rsync -a fw-root/lib/ rootfs/lib/
           ls rootfs/lib/firmware/ | head -20
           test -d rootfs/lib/firmware/ath10k/WCN3990 && echo "WCN3990 firmware present" || echo "WARN: WCN3990 firmware missing"
           ls rootfs/lib/firmware/qcom/ 2>/dev/null || true
-
       - name: Install kernel modules + depmod
         run: |
           KVER=$(cat kernel-artifacts/kver.txt)
