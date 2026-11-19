@@ -87,35 +87,12 @@ jobs:
 
       - name: Assemble initramfs cpio
         run: |
-          python3 - <<'EOF'
-          import struct
-          ino = [3000]
-          out = bytearray()
-          def entry(name, mode, data=b'', nlink=1):
-              ino[0] += 1
-              n = name.encode()
-              # newc header: 14 fields x 4 bytes, big-endian
-              out.extend(struct.pack('>14I', 0x070701, ino[0], mode, 0, 0, nlink,
-                                     0, len(data), 0, 0, 0, 0, len(n), 0))
-              out.extend(n)
-              while len(out) % 4: out.append(0)
-              out.extend(data)
-              while len(out) % 4: out.append(0)
-          def dir(name): entry(name, 0o040755, b'', 2)
-          for d in ['bin', 'sbin', 'dev', 'proc', 'sys', 'tmp', 'run', 'etc',
-                    'sys/kernel', 'sys/kernel/config', 'sys/class']:
-              dir(d)
-          entry('bin/busybox', 0o100755, open('busybox-arm64/busybox', 'rb').read())
-          entry('init', 0o100755, open('initramfs/init', 'rb').read())
-          # trailer
-          ino[0] += 1
-          out.extend(struct.pack('>14I', 0x070701, ino[0], 0, 0, 0, 1, 0, 0,
-                                 0, 0, 0, 0, 11, 0) + b'TRAILER!!!\0')
-          while len(out) % 512: out.append(0)
-          open('initramfs.cpio', 'wb').write(bytes(out))
-          print('cpio bytes:', len(out))
-          EOF
-          gzip -9 -c initramfs.cpio > initramfs.cpio.gz
+          mkdir -p initramfs-root/bin initramfs-root/sbin initramfs-root/dev initramfs-root/proc initramfs-root/sys initramfs-root/tmp initramfs-root/run initramfs-root/etc initramfs-root/sys/kernel/config initramfs-root/sys/class
+          cp busybox-arm64/busybox initramfs-root/bin/busybox
+          chmod +x initramfs-root/bin/busybox
+          cp initramfs/init initramfs-root/init
+          chmod +x initramfs-root/init
+          (cd initramfs-root && find . | cpio -o -H newc) | gzip -9 > initramfs.cpio.gz
           ls -la initramfs.cpio.gz
 
       - name: Pack boot.img
@@ -129,7 +106,7 @@ jobs:
             --base 0 \
             --pagesize 4096 \
             --kernel_offset 0x8000 \
-            --ramdisk_offset 0x1000000 \
+            --ramdisk_offset 0x4000000 \
             --second_offset 0xf00000 \
             --tags_offset 0x100 \
             --board sagit \
@@ -144,7 +121,7 @@ jobs:
           d[28:32] = (0xf00000).to_bytes(4, 'little')
           open('boot.img','wb').write(bytes(d))
           ks,ka,rs,ra,ss,sa,ta,ps,_,_ = struct.unpack('<10I', d[8:48])
-          assert (ka,ra,sa,ta,ps) == (0x8000,0x1000000,0xf00000,0x100,4096), 'header mismatch'
+          assert (ka,ra,sa,ta,ps) == (0x8000,0x4000000,0xf00000,0x100,4096), 'header mismatch'
           print('header ok: kernel=%d@%#x ramdisk=%d@%#x tags=%#x page=%d' % (ks,ka,rs,ra,ta,ps))
           EOF
           ls -la boot.img
