@@ -115,7 +115,7 @@ jobs:
           def find_repo(base, rels):
               for rel in rels:
                   try:
-                      urllib.request.urlopen(f"{base}/{rel}/aarch64/APKINDEX.tar.gz", timeout=20).read()
+                      urllib.request.urlopen(f"{base}/{rel}/aarch64/APKINDEX.tar.gz" if "postmarketos" in base else f"{base}/{rel}/main/aarch64/APKINDEX.tar.gz", timeout=20).read()
                       return rel
                   except Exception as e:
                       print(f"{base}/{rel}: {e}")
@@ -158,13 +158,13 @@ jobs:
           total = 0
           for base, rels, pkgs in REPOS:
               rel = find_repo(base, rels)
-              idx = f"{base}/{rel}/aarch64/APKINDEX.tar.gz"
+              idx = f"{base}/{rel}/aarch64/APKINDEX.tar.gz" if "postmarketos" in base else f"{base}/{rel}/main/aarch64/APKINDEX.tar.gz"
               print(f"repo: {base}/{rel}")
               for pkg in pkgs:
                   fn = resolve(idx, pkg)
                   if not fn:
                       print(f"MISSING: {pkg} (recorded)"); continue
-                  url = f"{base}/{rel}/aarch64/{fn}"
+                  url = f"{base}/{rel}/aarch64/{fn}" if "postmarketos" in base else f"{base}/{rel}/main/aarch64/{fn}"
                   print("fetch:", url)
                   blob = urllib.request.urlopen(url).read()
                   n = extract_firmware(blob, "fw-root")
