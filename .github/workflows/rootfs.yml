@@ -178,7 +178,7 @@ jobs:
           print("pmOS:", rel, " Alpine:", arel)
           missing = []
           with open("fw-repos", "w") as f:
-              f.write(f"{pmos}/{rel}\n{alpine}/{arel}/main\n")
+              f.write(f"{pmos}/{rel}\n{alpine}/{arel}/main\n{alpine}/{arel}/community\n")
           # 3) install into staging root
           subprocess.run(["sudo", "./apk.static", "--arch", "aarch64",
                           "--root", os.path.abspath("fw-root"), "--initdb",
