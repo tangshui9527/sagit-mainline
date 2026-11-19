@@ -196,7 +196,8 @@ jobs:
 
       - name: Build Debian initramfs (in chroot) and pack boot-debian.img
         run: |
-          KVER=$(cat kernel-artifacts/kver.txt)
+          KVER=$(tar -tzf kernel-artifacts/modules.tar.gz | sed -nE 's|^lib/modules/([^/]+)/.*|\1|p' | head -1)
+          echo "kernel release: $KVER"
           sudo chroot rootfs update-initramfs -c -k "$KVER"
           ls -la rootfs/boot/initrd.img-$KVER
           git clone --depth 1 https://android.googlesource.com/platform/system/tools/mkbootimg mkbootimg-repo \
