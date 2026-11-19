@@ -7,6 +7,36 @@ mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
 mount -t devpts devpts /dev/pts 2>/dev/null
 
+# Composite USB gadget: ACM(serial) + NCM/RNDIS(network). Without this the
+# post-g_serial-removal kernels enumerate no USB at all (M2 lesson).
+(
+    mount -t configfs configfs /sys/kernel/config 2>/dev/null || mkdir -p /sys/kernel/config
+    G=/sys/kernel/config/usb_gadget/mi6
+    mkdir -p "$G" 2>/dev/null || exit 0
+    echo 0x1d6b > "$G/idVendor"; echo 0x0104 > "$G/idProduct"; echo 0x0200 > "$G/bcdUSB"
+    mkdir -p "$G/strings/0x409" "$G/configs/c.1/strings/0x409"
+    echo sagit-rescue > "$G/strings/0x409/serialnumber"
+    echo Xiaomi > "$G/strings/0x409/manufacturer"
+    echo "Mi6 rescue (ACM+NCM+RNDIS)" > "$G/strings/0x409/product"
+    echo Composite > "$G/configs/c.1/strings/0x409/configuration"
+    echo 500 > "$G/configs/c.1/MaxPower"
+    mkdir -p "$G/functions/acm.usb0" "$G/functions/ncm.usb0" "$G/functions/rndis.usb0"
+    echo 02:06:00:00:00:01 > "$G/functions/ncm.usb0/dev_addr"
+    echo 02:06:00:00:00:02 > "$G/functions/ncm.usb0/host_addr"
+    echo 02:06:00:00:00:03 > "$G/functions/rndis.usb0/dev_addr"
+    echo 02:06:00:00:00:04 > "$G/functions/rndis.usb0/host_addr"
+    ln -sfn "$G/functions/acm.usb0"   "$G/configs/c.1/acm.usb0"
+    ln -sfn "$G/functions/ncm.usb0"   "$G/configs/c.1/ncm.usb0"
+    ln -sfn "$G/functions/rndis.usb0" "$G/configs/c.1/rndis.usb0"
+    UDC=$(ls /sys/class/udc 2>/dev/null | head -1)
+    [ -n "$UDC" ] && echo "$UDC" > "$G/UDC"
+    # NCM phone-side: static so laptop can reach telnetd without DHCP
+    sleep 1
+    ifconfig usb0 172.16.42.1 netmask 255.255.0.0 up 2>/dev/null
+    ifconfig usb1 172.16.43.1 netmask 255.255.0.0 up 2>/dev/null
+    telnetd -p 2323 -l /bin/sh 2>/dev/null
+) &
+
 # Enable SysRq for watchdog reboot
 echo 1 > /proc/sys/kernel/sysrq 2>/dev/null
 
