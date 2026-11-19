@@ -173,7 +173,7 @@ jobs:
           print("total firmware files:", total)
           assert total > 10, "too few firmware files extracted"
           EOF
-          sudo rsync -a fw-root/usr/ rootfs/usr/
+          sudo rsync -a fw-root/usr/ rootfs/usr/ 2>/dev/null || echo "no usr/ in firmware pkgs (fine)"
           sudo rsync -a fw-root/lib/ rootfs/lib/
           ls rootfs/lib/firmware/ | head -20
           test -d rootfs/lib/firmware/ath10k/WCN3990 && echo "WCN3990 firmware present" || echo "WARN: WCN3990 firmware missing"
