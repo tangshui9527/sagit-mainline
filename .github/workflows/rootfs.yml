@@ -240,7 +240,7 @@ jobs:
             -O extents,metadata_csum,64bit -E lazy_itable_init=0 \
             -d rootfs/ rootfs.img 8G
           sudo e2fsck -f -y rootfs.img >/dev/null 2>&1 || true
-          img2simg -b 4096 rootfs.img userdata-debian.simg
+          img2simg rootfs.img userdata-debian.simg 4096 || img2simg -b 4096 rootfs.img userdata-debian.simg
           ls -la rootfs.img userdata-debian.simg
 
       - name: Collect artifacts + manifest
