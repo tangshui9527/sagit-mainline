@@ -1,6 +1,4 @@
 #!/bin/sh
-# Mi 6 内核首启测试 initramfs /init（busybox 静态版）
-# 目标：USB ACM 串口(/dev/ttyGS0) 提供可交互 shell，验证内核存活与 UDC 枚举
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 /bin/busybox mkdir -p /proc /sys /dev /tmp /run /etc
 /bin/busybox --install -s
@@ -8,9 +6,6 @@ mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
 mount -t configfs configfs /sys/kernel/config 2>/dev/null || mkdir -p /sys/kernel/config
-
-echo "sagit-mainline kernel smoke test init" > /dev/console
-echo "kernel: $(uname -a)" > /dev/console
 
 # USB gadget: ACM single function (idVendor 0525 idProduct a4a7)
 G=/sys/kernel/config/usb_gadget/g1
@@ -36,28 +31,33 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 if [ -n "$UDC" ]; then
-    echo "$UDC" > "$G/UDC" && echo "gadget bound to $UDC (ACM ready)" > /dev/console
-else
-    echo "WARN: no UDC found" > /dev/console
+    echo "$UDC" > "$G/UDC"
 fi
 
 # Ensure /dev/ttyGS0 node exists
-if [ ! -c /dev/ttyGS0 ] && [ -f /sys/class/tty/ttyGS0/dev ]; then
-    MAJOR=$(cut -d: -f1 /sys/class/tty/ttyGS0/dev)
-    MINOR=$(cut -d: -f2 /sys/class/tty/ttyGS0/dev)
-    mknod /dev/ttyGS0 c "$MAJOR" "$MINOR" 2>/dev/null
-fi
+for i in 1 2 3 4 5; do
+    if [ -c /dev/ttyGS0 ]; then
+        break
+    fi
+    if [ -f /sys/class/tty/ttyGS0/dev ]; then
+        MAJOR=$(cut -d: -f1 /sys/class/tty/ttyGS0/dev)
+        MINOR=$(cut -d: -f2 /sys/class/tty/ttyGS0/dev)
+        mknod /dev/ttyGS0 c "$MAJOR" "$MINOR" 2>/dev/null
+        break
+    fi
+    sleep 0.2
+done
 
-# Interactive shell on serial gadget console
-(
-    while true; do
-        if [ -e /dev/ttyGS0 ]; then
-            exec /bin/busybox getty -n -l /bin/sh 115200 ttyGS0 vt100 2>/dev/null || \
-            exec /bin/busybox cttyhack /bin/sh </dev/ttyGS0 >/dev/ttyGS0 2>&1
-        fi
-        sleep 1
-    done
-) &
+# Keep interactive root shell alive on serial gadget
+while true; do
+    if [ -c /dev/ttyGS0 ]; then
+        echo "" > /dev/ttyGS0
+        echo "=== Welcome to Xiaomi 6 (sagit) Mainline Linux 7.2 ===" > /dev/ttyGS0
+        echo "Kernel: $(uname -a)" > /dev/ttyGS0
+        echo "" > /dev/ttyGS0
+        /bin/sh -i </dev/ttyGS0 >/dev/ttyGS0 2>&1
+    fi
+    sleep 1
+done &
 
-echo "init done; shell on ttyGS0 (USB ACM)" > /dev/console
 while true; do sleep 3600; done
