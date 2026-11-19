@@ -19,9 +19,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            mmdebstrap qemu-user-static binfmt-support \
+            mmdebstrap binfmt-support \
             e2fsprogs android-sdk-libsparse-utils \
-            debian-archive-keyring jq
+            debian-archive-keyring jq \
+            qemu-user-static || \
+          sudo apt-get install -y --no-install-recommends qemu-user-binfmt
+          test /usr/bin/qemu-aarch64-static -e /proc/sys/fs/binfmt_misc/status || true
 
       - name: Download latest kernel artifacts (Image/modules/boot-rescue)
         run: |
