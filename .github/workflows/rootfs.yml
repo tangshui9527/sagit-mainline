@@ -97,64 +97,104 @@ jobs:
           # keep initramfs lean-but-complete
           sudo sh -c 'echo "MODULES=most" > rootfs/etc/initramfs-tools/conf.d/mi6'
 
-      - name: Install firmware (postmarketOS packages, downloaded at build time)
+      - name: Install firmware (postmarketOS + Alpine packages via apk.static)
         run: |
           python3 - <<'EOF'
-          import urllib.request, io, tarfile, zlib, sys
-          MIRROR="https://mirror.postmarketos.org/postmarketos"
-          WANT=["firmware-xiaomi-sagit","soc-qcom-msm8998-nonfree-firmware",
-                "firmware-qcom-adreno-a530","linux-firmware-qca"]
-          rel=None
-          for cand in ["v25.12","v25.06","v24.12","edge"]:
-              try:
-                  urllib.request.urlopen(f"{MIRROR}/{cand}/aarch64/APKINDEX.tar.gz", timeout=20).read()
-                  rel=cand; break
-              except Exception as e:
-                  print(cand, "unavailable:", e)
-          assert rel, "no pmOS release reachable"
-          print("pmOS release:", rel)
-          idx=urllib.request.urlopen(f"{MIRROR}/{rel}/aarch64/APKINDEX.tar.gz").read()
-          tf=tarfile.open(fileobj=io.BytesIO(idx), mode="r:gz")
-          apkindex=tf.extractfile("APKINDEX").read().decode()
-          want_files={}
-          cur={}
-          for line in apkindex.splitlines():
-              if not line.strip():
-                  n=cur.get("P"); v=cur.get("V")
-                  if n in WANT and v: want_files[n]=f"{n}-{v}.apk"
-                  cur={}
-              else:
-                  if len(line)>1 and line[1]==":" and line[0] in "PVATIS":
-                      cur[line[0]]=line[2:]
-          print("resolved:", want_files)
-          missing=[w for w in WANT if w not in want_files]
-          if missing: print("MISSING (recorded):", missing)
-          for name,fn in want_files.items():
-              url=f"{MIRROR}/{rel}/aarch64/{fn}"
-              print("fetch", url)
-              blob=urllib.request.urlopen(url).read()
-              # apk = concatenated gzip streams (signature, control, data)
-              pos=0; data_tar=None
-              while pos < len(blob):
-                  d=zlib.decompressobj(31); out=d.decompress(blob[pos:]); out+=d.flush()
-                  consumed=len(blob)-pos-len(d.unused_data)
+          import urllib.request, io, tarfile, subprocess, os, sys
+
+          def resolve_apk(index_url, pkg):
+              idx = tarfile.open(fileobj=io.BytesIO(urllib.request.urlopen(index_url).read()), mode="r:gz")
+              text = idx.extractfile("APKINDEX").read().decode()
+              cur = {}
+              for line in text.splitlines():
+                  if not line.strip():
+                      n, v = cur.get("P"), cur.get("V")
+                      if n == pkg and v:
+                          return f"{n}-{v}.apk"
+                      cur = {}
+                  elif len(line) > 1 and line[1] == ":" and line[0] in "PV":
+                      cur[line[0]] = line[2:]
+              return None
+
+          def extract_gzip_members(blob):
+              """apk v2 = raw signature + gzip'd control + gzip'd data; scan for gzip magic."""
+              out = []
+              i = blob.find(b"\x1f\x8b")
+              while i >= 0:
                   try:
-                      t=tarfile.open(fileobj=io.BytesIO(out), mode="r:")
-                      names=t.getnames()
-                      if any(n.startswith("./usr") or n.startswith("./lib") or n.startswith("usr") for n in names):
-                          data_tar=io.BytesIO(out)
-                  except tarfile.ReadError:
-                      pass
-                  pos+=consumed
-              assert data_tar, f"no data stream in {fn}"
-              t=tarfile.open(fileobj=data_tar, mode="r:")
-              t.extractall("firmware-extract")
-              print("extracted", fn)
+                      tf = tarfile.open(fileobj=io.BytesIO(blob[i:]), mode="r:gz")
+                      names = tf.getnames()
+                      out.append((i, tf, names))
+                      break  # first gzip member that parses as tar is enough per stream
+                  except Exception:
+                      i = blob.find(b"\x1f\x8b", i + 1)
+              return out
+
+          # 1) fetch apk.static (host tool) from Alpine
+          alpine = "https://dl-cdn.alpinelinux.org/alpine"
+          apktool = None
+          for rel in ["latest-stable", "v3.23", "v3.22"]:
+              url = f"{alpine}/{rel}/main/x86_64/APKINDEX.tar.gz"
+              try:
+                  fn = resolve_apk(url, "apk-tools-static")
+                  if fn:
+                      apktool = f"{alpine}/{rel}/main/x86_64/{fn}"
+                      break
+              except Exception as e:
+                  print(rel, "index failed:", e)
+          assert apktool, "apk-tools-static not found"
+          print("apk tool:", apktool)
+          blob = urllib.request.urlopen(apktool).read()
+          for off, tf, names in extract_gzip_members(blob):
+              if any("apk.static" in n for n in names):
+                  for n in names:
+                      if n.endswith("apk.static"):
+                          f = tf.extractfile(n)
+                          open("apk.static", "wb").write(f.read())
+                          os.chmod("apk.static", 0o755)
+                          print("got ./apk.static")
+                          break
+                  break
+          assert os.path.exists("apk.static"), "apk.static not extracted"
+
+          # 2) resolve firmware packages across pmOS + Alpine repos
+          pmos = "https://mirror.postmarketos.org/postmarketos"
+          rel = None
+          for cand in ["v25.12", "v25.06", "v24.12"]:
+              try:
+                  urllib.request.urlopen(f"{pmos}/{cand}/aarch64/APKINDEX.tar.gz", timeout=20).read()
+                  rel = cand; break
+              except Exception:
+                  pass
+          assert rel, "no pmOS release reachable"
+          arel = None
+          for cand in ["v3.23", "v3.22", "v3.21"]:
+              try:
+                  urllib.request.urlopen(f"{alpine}/{cand}/main/aarch64/APKINDEX.tar.gz", timeout=20).read()
+                  arel = cand; break
+              except Exception:
+                  pass
+          assert arel, "no alpine release reachable"
+          print("pmOS:", rel, " Alpine:", arel)
+          missing = []
+          with open("fw-repos", "w") as f:
+              f.write(f"{pmos}/{rel}\n{alpine}/{arel}/main\n")
+          # 3) install into staging root
+          subprocess.run(["sudo", "./apk.static", "--arch", "aarch64",
+                          "--root", os.path.abspath("fw-root"), "--initdb",
+                          "--no-scripts", "--allow-untrusted",
+                          "--repositories-file", "fw-repos",
+                          "add", "firmware-xiaomi-sagit",
+                          "soc-qcom-msm8998-nonfree-firmware",
+                          "firmware-qcom-adreno-a530",
+                          "linux-firmware-qca"], check=True)
+          print("firmware tree:")
+          subprocess.run(["find", "fw-root/usr/lib/firmware", "-maxdepth", "3"], check=False)
           EOF
-          sudo rsync -a firmware-extract/usr/lib/firmware/ rootfs/lib/firmware/ 2>/dev/null || \
-            sudo rsync -a firmware-extract/lib/firmware/ rootfs/lib/firmware/
+          sudo rsync -a fw-root/usr/lib/firmware/ rootfs/lib/firmware/
           ls rootfs/lib/firmware/ | head -20
           test -d rootfs/lib/firmware/ath10k/WCN3990 && echo "WCN3990 firmware present" || echo "WARN: WCN3990 firmware missing"
+          ls rootfs/lib/firmware/qcom/ 2>/dev/null || true
 
       - name: Install kernel modules + depmod
         run: |
