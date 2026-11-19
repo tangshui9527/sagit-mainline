@@ -181,7 +181,12 @@ jobs:
       - name: Install kernel modules + depmod
         run: |
           KVER=$(cat kernel-artifacts/kver.txt)
-          sudo tar -xzf kernel-artifacts/modules.tar.gz -C rootfs/
+          # mmdebstrap rootfs is merged-usr (/lib -> usr/lib symlink); extracting
+          # lib/ at rootfs/ would replace the symlink with a real dir and break
+          # every /lib path. Extract under usr/ instead.
+          sudo tar -xzf kernel-artifacts/modules.tar.gz -C rootfs/usr/
+          sudo test -e rootfs/lib/ld-linux-aarch64.so.1 || \
+            sudo ln -s /usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1 rootfs/lib/ld-linux-aarch64.so.1
           sudo chroot rootfs depmod -a "$KVER"
           sudo mkdir -p rootfs/boot
           sudo cp kernel-artifacts/Image rootfs/boot/vmlinuz-$KVER
