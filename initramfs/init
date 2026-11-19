@@ -28,7 +28,13 @@ mount -t devpts devpts /dev/pts 2>/dev/null
     ln -sfn "$G/functions/acm.usb0"   "$G/configs/c.1/acm.usb0"
     ln -sfn "$G/functions/ncm.usb0"   "$G/configs/c.1/ncm.usb0"
     ln -sfn "$G/functions/rndis.usb0" "$G/configs/c.1/rndis.usb0"
-    UDC=$(ls /sys/class/udc 2>/dev/null | head -1)
+    # dwc3 probes asynchronously; race it with a retry loop
+    UDC=""
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+        UDC=$(ls /sys/class/udc 2>/dev/null | head -1)
+        [ -n "$UDC" ] && break
+        sleep 1
+    done
     [ -n "$UDC" ] && echo "$UDC" > "$G/UDC"
     # NCM phone-side: static so laptop can reach telnetd without DHCP
     sleep 1

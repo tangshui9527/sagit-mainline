@@ -27,6 +27,11 @@ printf '1' > "$G/os_desc/use"; printf '0xcd' > "$G/os_desc/b_vendor_code"; print
 printf 'RNDIS' > "$G/functions/rndis.usb0/os_desc/interface.rndis/compatible_id"
 printf '5162001' > "$G/functions/rndis.usb0/os_desc/interface.rndis/sub_compatible_id"
 ln -sfn "$G/configs/c.1" "$G/os_desc/c.1"
-UDC=$(ls /sys/class/udc 2>/dev/null | head -1)
+UDC=""
+for i in $(seq 1 30); do
+    UDC=$(ls /sys/class/udc 2>/dev/null | head -1)
+    [ -n "$UDC" ] && break
+    sleep 1
+done
 [ -n "$UDC" ] && echo "$UDC" > "$G/UDC" && exit 0
-echo 'No UDC found' >&2; exit 1
+echo 'No UDC found after 30s' >&2; exit 1
