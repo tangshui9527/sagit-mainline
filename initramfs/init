@@ -1,100 +1,81 @@
 #!/bin/sh
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin
-/bin/busybox mkdir -p /proc /sys /dev /tmp /run /etc /usr/bin /usr/sbin
+/bin/busybox mkdir -p /proc /sys /dev /dev/pts /tmp /run /etc /usr/bin /usr/sbin /var/lib/misc
 /bin/busybox --install -s
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
-mount -t configfs configfs /sys/kernel/config 2>/dev/null || mkdir -p /sys/kernel/config
+mount -t devpts devpts /dev/pts 2>/dev/null
+mount -t configfs none /sys/kernel/config 2>/dev/null
 
-# Enable SysRq
+# Enable SysRq for watchdog reboot
 echo 1 > /proc/sys/kernel/sysrq 2>/dev/null
+
+# Log init messages to kmsg (dmesg)
 exec >/dev/kmsg 2>&1
-echo "<6>sagit-mainline: composite gadget (RNDIS + ACM) starting..."
+echo "<6>sagit-mainline: init started"
 
-# USB Composite Gadget: RNDIS (18d1:d001) + ACM
-G=/sys/kernel/config/usb_gadget/g1
-mkdir -p "$G"
-echo 0x18d1 > "$G/idVendor"
-echo 0xd001 > "$G/idProduct"
-echo 0x0200 > "$G/bcdUSB"
-echo 0x0100 > "$G/bcdDevice"
-mkdir -p "$G/strings/0x409"
-echo "sagit-mainline-ci" > "$G/strings/0x409/serialnumber"
-echo "Xiaomi" > "$G/strings/0x409/manufacturer"
-echo "Mi 6 Mainline Linux" > "$G/strings/0x409/product"
+# Try setting up ConfigFS composite gadget (NCM + ACM)
+if [ -d /sys/kernel/config/usb_gadget ]; then
+    G=/sys/kernel/config/usb_gadget/g1
+    mkdir -p "$G" 2>/dev/null
+    if [ -d "$G" ]; then
+        echo 0x1d6b > "$G/idVendor" 2>/dev/null
+        echo 0x0104 > "$G/idProduct" 2>/dev/null
+        echo 0x0200 > "$G/bcdUSB" 2>/dev/null
+        echo 0x0100 > "$G/bcdDevice" 2>/dev/null
+        mkdir -p "$G/strings/0x409" 2>/dev/null
+        echo "fedcba9876543210" > "$G/strings/0x409/serialnumber" 2>/dev/null
+        echo "Xiaomi" > "$G/strings/0x409/manufacturer" 2>/dev/null
+        echo "Mi 6 Sagit Mainline" > "$G/strings/0x409/product" 2>/dev/null
 
-# Function 1: RNDIS
-mkdir -p "$G/functions/rndis.usb0"
-echo "02:06:00:00:00:01" > "$G/functions/rndis.usb0/dev_addr"
-echo "02:06:00:00:00:02" > "$G/functions/rndis.usb0/host_addr"
+        mkdir -p "$G/configs/c.1/strings/0x409" 2>/dev/null
+        echo "CDC NCM + ACM" > "$G/configs/c.1/strings/0x409/configuration" 2>/dev/null
+        echo 250 > "$G/configs/c.1/MaxPower" 2>/dev/null
 
-# Function 2: ACM Serial
-mkdir -p "$G/functions/acm.usb0"
+        # 1. CDC NCM Network Function
+        mkdir -p "$G/functions/ncm.usb0" 2>/dev/null
+        echo "02:06:00:00:00:01" > "$G/functions/ncm.usb0/dev_addr" 2>/dev/null
+        echo "02:06:00:00:00:02" > "$G/functions/ncm.usb0/host_addr" 2>/dev/null
+        ln -s "$G/functions/ncm.usb0" "$G/configs/c.1/" 2>/dev/null
 
-mkdir -p "$G/configs/c.1/strings/0x409"
-echo "RNDIS+ACM" > "$G/configs/c.1/strings/0x409/configuration"
-echo 500 > "$G/configs/c.1/MaxPower"
+        # 2. CDC ACM Serial Function
+        mkdir -p "$G/functions/acm.usb0" 2>/dev/null
+        ln -s "$G/functions/acm.usb0" "$G/configs/c.1/" 2>/dev/null
 
-# OS descriptors for RNDIS host compatibility
-echo 1 > "$G/os_desc/use" 2>/dev/null
-echo 0xcd > "$G/os_desc/b_vendor_code" 2>/dev/null
-echo "MSFT100" > "$G/os_desc/qw_sign" 2>/dev/null
-echo "RNDIS" > "$G/functions/rndis.usb0/os_desc/interface.rndis/compatible_id" 2>/dev/null
-echo "5162001" > "$G/functions/rndis.usb0/os_desc/interface.rndis/sub_compatible_id" 2>/dev/null
-[ -L "$G/os_desc/c.1" ] || ln -s "$G/configs/c.1" "$G/os_desc/c.1" 2>/dev/null
-
-ln -s "$G/functions/rndis.usb0" "$G/configs/c.1/rndis.usb0" 2>/dev/null
-ln -s "$G/functions/acm.usb0" "$G/configs/c.1/acm.usb0" 2>/dev/null
-
-# Bind UDC
-for i in 1 2 3 4 5 6 7 8 9 10; do
-    UDC=$(ls /sys/class/udc 2>/dev/null | head -1)
-    if [ -n "$UDC" ]; then
-        echo "$UDC" > "$G/UDC"
-        echo "<6>sagit-mainline: bound to UDC $UDC"
-        break
-    fi
-    sleep 0.5
-done
-
-# Bring up RNDIS network (172.16.42.1)
-(
-    for i in 1 2 3 4 5 6 7 8 9 10; do
-        if ifconfig usb0 172.16.42.1 netmask 255.255.255.0 up 2>/dev/null; then
-            echo "<6>sagit-mainline: usb0 configured with 172.16.42.1"
-            break
+        UDC=$(ls /sys/class/udc 2>/dev/null | head -n 1)
+        if [ -n "$UDC" ]; then
+            echo "$UDC" > "$G/UDC" 2>/dev/null
+            if [ $? -eq 0 ]; then
+                echo "<6>sagit-mainline: ConfigFS NCM+ACM bound to $UDC"
+            else
+                echo "<6>sagit-mainline: ConfigFS bind skipped (UDC already active)"
+            fi
         fi
-        sleep 0.5
-    done
-    # Start root telnetd shell on port 2323
-    /bin/busybox telnetd -l /bin/sh -p 2323 -F &
-) &
-
-# Ensure /dev/ttyGS0 node exists
-if [ ! -c /dev/ttyGS0 ]; then
-    if [ -f /sys/class/tty/ttyGS0/dev ]; then
-        DEV=$(cat /sys/class/tty/ttyGS0/dev)
-        MAJOR=${DEV%:*}
-        MINOR=${DEV#*:}
-        mknod /dev/ttyGS0 c "$MAJOR" "$MINOR" 2>/dev/null
-    else
-        mknod /dev/ttyGS0 c 242 0 2>/dev/null
     fi
+fi
+
+# Bring up network if usb0 exists
+if ifconfig usb0 172.16.42.1 netmask 255.255.255.0 up 2>/dev/null; then
+    echo "<6>sagit-mainline: usb0 configured (172.16.42.1)"
+    touch /tmp/udhcpd.leases
+    /bin/busybox udhcpd /etc/udhcpd.conf &
+    /bin/busybox telnetd -l /bin/sh -p 2323 &
+    echo "<6>sagit-mainline: udhcpd and telnetd (port 2323) active"
 fi
 
 # Background Watchdog: 60s auto-rollback to FASTBOOT
 (
-    echo "<6>sagit-mainline: 60s auto-rollback timer started"
+    echo "<6>sagit-mainline: auto-rollback watchdog started (60s)"
     for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60; do
         if [ -f /tmp/stay ]; then
-            echo "<6>sagit-mainline: auto-rollback CANCELLED via /tmp/stay"
+            echo "<6>sagit-mainline: auto-rollback cancelled via /tmp/stay"
             exit 0
         fi
         sleep 1
     done
 
-    echo "<6>sagit-mainline: auto-rollback timer expired! Re-entering FASTBOOT..."
+    echo "<6>sagit-mainline: watchdog expired! Setting fastboot reboot flag..."
     for u in /sys/class/block/*/uevent; do
         if grep -q "PARTNAME=misc" "$u" 2>/dev/null; then
             DEV_NAME=$(basename $(dirname "$u"))
@@ -107,20 +88,14 @@ fi
         fi
     done
     sync
-    /bin/reboot-bootloader 2>/dev/null
     echo b > /proc/sysrq-trigger 2>/dev/null
     /bin/busybox reboot -f 2>/dev/null
 ) &
 
-# Foreground loop
+# Foreground Serial Console on ttyGS0 (PID 1)
 while true; do
     if [ -c /dev/ttyGS0 ]; then
-        echo "" > /dev/ttyGS0 2>/dev/null
-        echo "=== Welcome to Xiaomi 6 (sagit) Linux 7.2 Mainline ===" > /dev/ttyGS0 2>/dev/null
-        echo "Kernel: $(uname -a)" > /dev/ttyGS0 2>/dev/null
-        echo "Network: usb0 at 172.16.42.1 (telnet port 2323)" > /dev/ttyGS0 2>/dev/null
-        echo "Auto-rollback: 60s to FASTBOOT ('touch /tmp/stay' to cancel)" > /dev/ttyGS0 2>/dev/null
-        echo "" > /dev/ttyGS0 2>/dev/null
+        echo "<6>sagit-mainline: launching shell on ttyGS0"
         /bin/busybox cttyhack /bin/sh </dev/ttyGS0 >/dev/ttyGS0 2>&1
     fi
     sleep 1
