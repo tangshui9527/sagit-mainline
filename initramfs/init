@@ -10,6 +10,11 @@ mount -t configfs configfs /sys/kernel/config 2>/dev/null || mkdir -p /sys/kerne
 # Enable SysRq
 echo 1 > /proc/sys/kernel/sysrq 2>/dev/null
 
+# Log all stdout/stderr to kmsg
+exec >/dev/kmsg 2>&1
+
+echo "<6>sagit-mainline: init starting..."
+
 # USB gadget: ACM single function (idVendor 0525 idProduct a4a7)
 G=/sys/kernel/config/usb_gadget/g1
 mkdir -p "$G"
@@ -29,58 +34,69 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
     UDC=$(ls /sys/class/udc 2>/dev/null | head -1)
     if [ -n "$UDC" ]; then
         echo "$UDC" > "$G/UDC"
+        echo "<6>sagit-mainline: bound to UDC $UDC"
         break
     fi
     sleep 0.5
 done
 
-# Wait for /dev/ttyGS0 node to exist
-for i in 1 2 3 4 5 6 7 8 9 10; do
-    if [ -c /dev/ttyGS0 ]; then
-        break
-    fi
+# Ensure /dev/ttyGS0 node exists
+if [ ! -c /dev/ttyGS0 ]; then
     if [ -f /sys/class/tty/ttyGS0/dev ]; then
         DEV=$(cat /sys/class/tty/ttyGS0/dev)
         MAJOR=${DEV%:*}
         MINOR=${DEV#*:}
         mknod /dev/ttyGS0 c "$MAJOR" "$MINOR" 2>/dev/null
-        break
+    else
+        mknod /dev/ttyGS0 c 242 0 2>/dev/null
     fi
-    sleep 0.5
-done
+fi
 
-# Background watchdog: 40s auto-rollback to FASTBOOT
+# Background Watchdog: 30s auto-rollback to FASTBOOT
 (
-    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40; do
+    echo "<6>sagit-mainline: auto-rollback timer started (30s)"
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
         if [ -f /tmp/stay ]; then
+            echo "<6>sagit-mainline: auto-rollback CANCELLED via /tmp/stay"
+            echo "[Auto-rollback] Stay flag detected. Auto-reboot CANCELLED." > /dev/ttyGS0 2>/dev/null
             exit 0
         fi
         sleep 1
     done
 
-    # Set bootloader flag on misc partition
-    for p in /dev/disk/by-partlabel/misc /dev/block/by-name/misc /dev/sda3 /dev/sde3 /dev/block/bootdevice/by-name/misc; do
-        if [ -b "$p" ]; then
-            printf 'bootloader\0' | dd of="$p" bs=1 count=11 conv=notrunc 2>/dev/null
+    echo "<6>sagit-mainline: auto-rollback timer expired! Setting fastboot reboot flag..."
+    echo "[Auto-rollback] Timer expired! Rebooting back to FASTBOOT..." > /dev/ttyGS0 2>/dev/null
+
+    # Find misc partition dynamically from sysfs
+    for u in /sys/class/block/*/uevent; do
+        if grep -q "PARTNAME=misc" "$u" 2>/dev/null; then
+            DEV_NAME=$(basename $(dirname "$u"))
+            MISC="/dev/$DEV_NAME"
+            if [ -b "$MISC" ]; then
+                printf 'bootloader\0' | dd of="$MISC" bs=1 count=11 conv=notrunc 2>/dev/null
+                echo "<6>sagit-mainline: written bootloader to $MISC"
+            fi
             break
         fi
     done
+
     sync
+    /bin/reboot-bootloader 2>/dev/null
     echo b > /proc/sysrq-trigger 2>/dev/null
     /bin/busybox reboot -f 2>/dev/null
 ) &
 
-# Foreground interactive shell on ttyGS0 managed directly by PID 1
-exec </dev/ttyGS0 >/dev/ttyGS0 2>&1
-echo ""
-echo "=================================================="
-echo "   Welcome to Xiaomi 6 (sagit) Linux 7.2 Mainline"
-echo "   Kernel: $(uname -a)"
-echo "   Auto-rollback: 40s to FASTBOOT ('touch /tmp/stay' to cancel)"
-echo "=================================================="
-echo ""
-
+# Foreground shell loop (PID 1 NEVER exits)
 while true; do
-    /bin/busybox cttyhack /bin/sh
+    if [ -c /dev/ttyGS0 ]; then
+        echo "" > /dev/ttyGS0 2>/dev/null
+        echo "==================================================" > /dev/ttyGS0 2>/dev/null
+        echo "   Welcome to Xiaomi 6 (sagit) Linux 7.2 Mainline" > /dev/ttyGS0 2>/dev/null
+        echo "   Kernel: $(uname -a)" > /dev/ttyGS0 2>/dev/null
+        echo "   Auto-rollback: 30s to FASTBOOT ('touch /tmp/stay' to cancel)" > /dev/ttyGS0 2>/dev/null
+        echo "==================================================" > /dev/ttyGS0 2>/dev/null
+        echo "" > /dev/ttyGS0 2>/dev/null
+        /bin/busybox cttyhack /bin/sh </dev/ttyGS0 >/dev/ttyGS0 2>&1
+    fi
     sleep 1
 done
