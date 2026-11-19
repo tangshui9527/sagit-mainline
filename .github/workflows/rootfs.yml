@@ -180,7 +180,9 @@ jobs:
           ls rootfs/lib/firmware/qcom/ 2>/dev/null || true
       - name: Install kernel modules + depmod
         run: |
-          KVER=$(cat kernel-artifacts/kver.txt)
+          KVER=$(tar -tzf kernel-artifacts/modules.tar.gz | sed -nE 's|^lib/modules/([^/]+)/.*|\1|p' | head -1)
+          test -n "$KVER" || { echo "cannot derive KVER"; exit 1; }
+          echo "kernel release: $KVER"
           # mmdebstrap rootfs is merged-usr (/lib -> usr/lib symlink); extracting
           # lib/ at rootfs/ would replace the symlink with a real dir and break
           # every /lib path. Extract under usr/ instead.
@@ -213,6 +215,15 @@ jobs:
             --board sagit \
             --cmdline "clk_ignore_unused root=UUID=$ROOT_UUID rw rootwait loglevel=7" \
             --output boot-debian.img
+          python3 - <<'PYEOF'
+          import struct
+          d = bytearray(open('boot-debian.img','rb').read())
+          d[28:32] = (0xf00000).to_bytes(4, 'little')
+          open('boot-debian.img','wb').write(bytes(d))
+          ks,ka,rs,ra,ss,sa,ta,ps,_,_ = struct.unpack('<10I', d[8:48])
+          assert (ka,ra,sa,ta,ps) == (0x8000,0x4000000,0xf00000,0x100,4096), 'header mismatch'
+          print('boot-debian.img header ok: kernel %d@0x8000 ramdisk %d@0x4000000 tags 0x100' % (ks,rs))
+          PYEOF
           python3 - <<'EOF'
           import struct, os
           d = bytearray(open('boot-debian.img','rb').read())
@@ -238,7 +249,7 @@ jobs:
           cp userdata-debian.simg out/
           cp boot-debian.img out/
           cp kernel-artifacts/boot.img out/boot-rescue.img
-          KVER=$(cat kernel-artifacts/kver.txt)
+          KVER=$(tar -tzf kernel-artifacts/modules.tar.gz | sed -nE 's|^lib/modules/([^/]+)/.*|\1|p' | head -1)
           {
             echo "kernel: $KVER (ilertnost @ $TREE_REF)"
             echo "rootfs: debian trixie arm64 (mmdebstrap)"
