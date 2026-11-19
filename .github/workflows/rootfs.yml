@@ -236,8 +236,9 @@ jobs:
 
       - name: Build ext4 image and convert to sparse
         run: |
+          # NOTE: no metadata_csum until kernel fragment enables CRYPTO_CRC32C
           sudo mke2fs -F -q -b 4096 -U "$ROOT_UUID" -I 256 \
-            -O extents,metadata_csum,64bit -E lazy_itable_init=0 \
+            -O extents,64bit -E lazy_itable_init=0 \
             -d rootfs/ rootfs.img 8G
           sudo e2fsck -f -y rootfs.img >/dev/null 2>&1 || true
           img2simg rootfs.img userdata-debian.simg 4096 || img2simg -b 4096 rootfs.img userdata-debian.simg
