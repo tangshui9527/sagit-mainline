@@ -237,7 +237,7 @@ jobs:
       - name: Build ext4 image and convert to sparse
         run: |
           sudo mke2fs -F -q -b 4096 -U "$ROOT_UUID" -I 256 \
-            -O metadata_csum,64bit -E lazy_itable_init=0 \
+            -O extents,metadata_csum,64bit -E lazy_itable_init=0 \
             -d rootfs/ rootfs.img 8G
           sudo e2fsck -f -y rootfs.img >/dev/null 2>&1 || true
           img2simg -b 4096 rootfs.img userdata-debian.simg
