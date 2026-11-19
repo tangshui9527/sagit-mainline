@@ -19,7 +19,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            mmdebstrap binfmt-support \
+            mmdebstrap binfmt-support arch-test \
             e2fsprogs android-sdk-libsparse-utils \
             debian-archive-keyring jq
           # new Ubuntu renamed qemu-user-static -> qemu-user-binfmt
