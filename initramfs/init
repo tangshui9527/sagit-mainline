@@ -96,7 +96,11 @@ fi
 while true; do
     if [ -c /dev/ttyGS0 ]; then
         echo "<6>sagit-mainline: launching shell on ttyGS0"
-        /bin/busybox cttyhack /bin/sh </dev/ttyGS0 >/dev/ttyGS0 2>&1
+        echo "" > /dev/ttyGS0 2>/dev/null
+        echo "=== Welcome to Xiaomi 6 (Sagit) Mainline Linux 7.2 ===" > /dev/ttyGS0 2>/dev/null
+        echo "Tip: Run 'touch /tmp/stay' to cancel the 60s auto-reboot." > /dev/ttyGS0 2>/dev/null
+        echo "" > /dev/ttyGS0 2>/dev/null
+        /bin/busybox cttyhack /bin/sh -i </dev/ttyGS0 >/dev/ttyGS0 2>&1
     fi
     sleep 1
 done

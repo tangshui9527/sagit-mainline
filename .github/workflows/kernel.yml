@@ -90,8 +90,15 @@ jobs:
           mkdir -p initramfs-root/bin initramfs-root/sbin initramfs-root/dev initramfs-root/proc initramfs-root/sys initramfs-root/tmp initramfs-root/run initramfs-root/etc initramfs-root/sys/kernel/config initramfs-root/sys/class
           cp busybox-arm64/busybox initramfs-root/bin/busybox
           chmod +x initramfs-root/bin/busybox
+          ln -sf busybox initramfs-root/bin/sh
+          for cmd in sleep echo cat ls mkdir mount mknod grep sync dd reboot ifconfig telnetd udhcpd cttyhack ps kill; do
+            ln -sf busybox "initramfs-root/bin/$cmd"
+          done
           cp initramfs/init initramfs-root/init
           chmod +x initramfs-root/init
+          if [ -d initramfs/etc ]; then
+            cp -r initramfs/etc/* initramfs-root/etc/
+          fi
           (cd initramfs-root && find . | cpio -o -H newc) | gzip -9 > initramfs.cpio.gz
           ls -la initramfs.cpio.gz
 
