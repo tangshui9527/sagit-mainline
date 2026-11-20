@@ -1,0 +1,136 @@
+name: kernel-upstream-test
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '上游 stable 标签（如 v7.3.5）'
+        required: false
+        default: 'v7.3.5'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TAG: ${{ github.event.inputs.tag || 'v7.3.5' }}
+      CROSS_COMPILE: aarch64-linux-gnu-
+      ARCH: arm64
+    steps:
+      - name: Checkout project repo
+        uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            flex bison bc libssl-dev libelf-dev cpio \
+            build-essential dwarves zstd cpio
+
+      - name: Clone upstream stable at tag
+        run: |
+          git clone --depth 1 --branch "$TAG" \
+            https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git kernel \
+            || git clone --depth 1 --branch "$TAG" \
+            https://github.com/gregkh/linux kernel
+          cd kernel && git rev-parse HEAD
+
+      - name: Fetch ilertnost sagit_defconfig
+        run: |
+          curl -fL -o kernel/arch/arm64/configs/sagit_defconfig \
+            https://raw.githubusercontent.com/ilertnost/kernel_xiaomi_msm8998-mainline/master/arch/arm64/configs/sagit_defconfig
+          wc -l kernel/arch/arm64/configs/sagit_defconfig
+
+      - name: Configure (sagit_defconfig + mi6.fragment)
+        run: |
+          cd kernel
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- sagit_defconfig
+          ./scripts/kconfig/merge_config.sh -m .config ../configs/mi6.fragment
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          grep -E 'CONFIG_ARCH_QCOM|CONFIG_EXT4_FS=|CONFIG_CONFIGFS_FS=|CONFIG_USB_DWC3_QCOM|CONFIG_CRYPTO_CRC32C|CONFIG_USB_CONFIGFS_ACM' .config || true
+
+      - name: Build kernel, DTBs, modules
+        run: |
+          cd kernel
+          make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image dtbs modules
+          KVER=$(make -s ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- kernelversion)
+          echo "KVER=$KVER" > ../kver.txt
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- INSTALL_MOD_PATH=../modules modules_install
+          tar -czf ../modules.tar.gz -C ../modules lib
+          gzip -9 -c arch/arm64/boot/Image > Image.gz
+          cat Image.gz arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dtb > Image.gz-dtb
+          ls -la arch/arm64/boot/Image Image.gz-dtb
+
+      - name: Get arm64 static busybox
+        run: |
+          sudo dpkg --add-architecture arm64
+          printf 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main universe\n' | sudo tee /etc/apt/sources.list.d/arm64.list
+          sudo apt-get update
+          cd /tmp && apt-get download busybox-static:arm64
+          mkdir busybox-root && dpkg -x busybox-static_*.deb busybox-root
+          BB=$(find busybox-root -type f -name busybox | head -1)
+          mkdir -p "$GITHUB_WORKSPACE/busybox-arm64"
+          cp "$BB" "$GITHUB_WORKSPACE/busybox-arm64/busybox"
+
+      - name: Assemble rescue initramfs (gadget + telnetd, 7.3.5 test shell)
+        run: |
+          mkdir -p initramfs-root/bin initramfs-root/sbin initramfs-root/dev initramfs-root/proc initramfs-root/sys initramfs-root/tmp initramfs-root/run initramfs-root/etc initramfs-root/mnt initramfs-root/sys/kernel/config initramfs-root/sys/class
+          cp busybox-arm64/busybox initramfs-root/bin/busybox
+          chmod +x initramfs-root/bin/busybox
+          ln -sf busybox initramfs-root/bin/sh
+          for cmd in sleep echo cat ls mkdir mount mknod grep sync dd reboot ifconfig telnetd cttyhack ps kill hexdump; do
+            ln -sf busybox "initramfs-root/bin/$cmd"
+          done
+          cp initramfs/init initramfs-root/init
+          chmod +x initramfs-root/init
+          (cd initramfs-root && find . | cpio -o -H newc) | gzip -9 > initramfs.cpio.gz
+          ls -la initramfs.cpio.gz
+
+      - name: Pack boot-upstream.img
+        run: |
+          git clone --depth 1 https://android.googlesource.com/platform/system/tools/mkbootimg mkbootimg-repo \
+            || git clone --depth 1 https://github.com/LineageOS/android_system_tools_mkbootimg mkbootimg-repo
+          python3 mkbootimg-repo/mkbootimg.py \
+            --kernel kernel/Image.gz-dtb \
+            --ramdisk initramfs.cpio.gz \
+            --base 0 --pagesize 4096 \
+            --kernel_offset 0x8000 \
+            --ramdisk_offset 0x4000000 \
+            --second_offset 0xf00000 \
+            --tags_offset 0x100 \
+            --board sagit \
+            --cmdline "clk_ignore_unused console=tty1" \
+            --output boot-upstream.img
+          python3 - <<'PYEOF'
+          import struct
+          d = bytearray(open('boot-upstream.img','rb').read())
+          d[28:32] = (0xf00000).to_bytes(4, 'little')
+          open('boot-upstream.img','wb').write(bytes(d))
+          ks,ka,rs,ra,ss,sa,ta,ps,_,_ = struct.unpack('<10I', d[8:48])
+          assert (ka,ra,sa,ta,ps) == (0x8000,0x4000000,0xf00000,0x100,4096), 'header mismatch'
+          print('boot-upstream.img ok: kernel %d@0x8000 ramdisk %d@0x4000000' % (ks, rs))
+          PYEOF
+          ls -la boot-upstream.img
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p out
+          KVER=$(cat kver.txt)
+          cp kernel/arch/arm64/boot/Image out/
+          cp kernel/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dtb out/
+          cp kernel/Image.gz-dtb out/
+          cp kernel/.config out/config-$KVER
+          cp modules.tar.gz out/
+          cp kver.txt out/
+          cp boot-upstream.img out/
+          cd kernel && git rev-parse HEAD > ../out/kernel-commit.txt && cd ..
+          echo "upstream tag: $TAG" > out/MANIFEST.txt
+          sha256sum out/* >> out/MANIFEST.txt 2>/dev/null || true
+          cat out/MANIFEST.txt
+          ls -la out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sagit-upstream-${{ env.TAG }}
+          path: out/
