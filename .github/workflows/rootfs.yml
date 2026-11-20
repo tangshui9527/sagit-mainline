@@ -153,8 +153,18 @@ jobs:
         run: |
           sudo apt-get install -y --no-install-recommends cpio
           mkdir -p initramfs-root/bin initramfs-root/sbin initramfs-root/dev initramfs-root/proc initramfs-root/sys initramfs-root/tmp initramfs-root/run initramfs-root/etc initramfs-root/sys/kernel/config initramfs-root/sys/class
-          # reuse arm64 busybox from Debian rootfs (same static binary)
-          cp rootfs/usr/bin/busybox initramfs-root/bin/busybox 2>/dev/null ||             sudo cp rootfs/bin/busybox initramfs-root/bin/busybox
+          # Debian's busybox is DYNAMIC and the rescue initramfs has no loader;
+          # use the static one from Ubuntu ports (same source as kernel.yml)
+          sudo dpkg --add-architecture arm64
+          printf 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main universe\n' | sudo tee /etc/apt/sources.list.d/arm64.list
+          sudo apt-get update >/dev/null 2>&1
+          cd /tmp && apt-get download busybox-static:arm64 >/dev/null
+          rm -rf busybox-root && mkdir busybox-root && dpkg -x busybox-static_*.deb busybox-root
+          BB=$(find busybox-root -type f -name busybox | head -1)
+          file "$BB"
+          cd "$GITHUB_WORKSPACE"
+          cp "/tmp/$BB" initramfs-root/bin/busybox
+          chmod +x initramfs-root/bin/busybox
           chmod +x initramfs-root/bin/busybox
           ln -sf busybox initramfs-root/bin/sh
           for cmd in sleep echo cat ls mkdir mount mknod grep sync dd reboot ifconfig telnetd udhcpd cttyhack ps kill dirname basename; do
