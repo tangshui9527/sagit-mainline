@@ -153,17 +153,45 @@ jobs:
         run: |
           sudo apt-get install -y --no-install-recommends cpio
           mkdir -p initramfs-root/bin initramfs-root/sbin initramfs-root/dev initramfs-root/proc initramfs-root/sys initramfs-root/tmp initramfs-root/run initramfs-root/etc initramfs-root/sys/kernel/config initramfs-root/sys/class
-          # Debian's busybox is DYNAMIC and the rescue initramfs has no loader;
-          # use the static one from Ubuntu ports (same source as kernel.yml)
-          sudo dpkg --add-architecture arm64
-          printf 'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main universe\n' | sudo tee /etc/apt/sources.list.d/arm64.list
-          sudo apt-get update >/dev/null 2>&1
-          cd /tmp && apt-get download busybox-static:arm64 >/dev/null
-          rm -rf busybox-root && mkdir busybox-root && dpkg -x busybox-static_*.deb busybox-root
-          BB=$(find busybox-root -type f -name busybox | head -1)
-          file "$BB"
-          cd "$GITHUB_WORKSPACE"
-          cp "/tmp/$BB" initramfs-root/bin/busybox
+          # Use Alpine musl-STATIC busybox: single file, zero deps, runs in a
+          # loader-less initramfs on any kernel (Ubuntu's busybox-static is
+          # dynamically linked -> init cannot exec -> dark boot, M2 lesson)
+          python3 - <<'PYB'
+          import urllib.request, io, tarfile, os
+          base="https://dl-cdn.alpinelinux.org/alpine"
+          rel=None
+          for cand in ["v3.23","v3.22","v3.21","latest-stable"]:
+              try:
+                  urllib.request.urlopen(f"{base}/{cand}/main/aarch64/APKINDEX.tar.gz",timeout=20).read()
+                  rel=cand; break
+              except Exception: pass
+          assert rel, "no alpine repo"
+          tf=tarfile.open(fileobj=io.BytesIO(urllib.request.urlopen(f"{base}/{rel}/main/aarch64/APKINDEX.tar.gz").read()),mode="r:gz")
+          t=tf.extractfile("APKINDEX").read().decode()
+          fn=None; cur={}
+          for line in t.splitlines():
+              if not line.strip():
+                  if cur.get("P")=="busybox-static" and cur.get("V"): fn=f"busybox-static-{cur['V']}.apk"; break
+                  cur={}
+              elif len(line)>1 and line[1]==":" and line[0] in "PV":
+                  cur[line[0]]=line[2:]
+          assert fn, "busybox-static not in alpine index"
+          blob=urllib.request.urlopen(f"{base}/{rel}/main/aarch64/{fn}").read()
+          i=blob.find(b"\x1f\x8b"); got=False
+          while i>=0:
+              try:
+                  t2=tarfile.open(fileobj=io.BytesIO(blob[i:]),mode="r:gz")
+                  for m in t2.getmembers():
+                      if m.name.endswith("busybox.static") or m.name.endswith("/busybox.static"):
+                          data=t2.extractfile(m).read()
+                          open("busybox-static-arm64","wb").write(data); got=True
+                  if got: break
+              except Exception: pass
+              i=blob.find(b"\x1f\x8b", i+1)
+          assert got, "busybox.static not extracted"
+          print("alpine busybox.static extracted:", rel, fn)
+          PYB
+          cp busybox-static-arm64 initramfs-root/bin/busybox
           chmod +x initramfs-root/bin/busybox
           chmod +x initramfs-root/bin/busybox
           ln -sf busybox initramfs-root/bin/sh
@@ -186,7 +214,7 @@ jobs:
             --second_offset 0xf00000 \
             --tags_offset 0x100 \
             --board sagit \
-            --cmdline "clk_ignore_unused console=tty1" \
+            --cmdline "clk_ignore_unused console=tty1 panic=10" \
             --output boot-rescue2.img
           python3 - <<'PYEOF'
           import struct
