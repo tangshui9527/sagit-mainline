@@ -7,6 +7,28 @@ mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
 mount -t devpts devpts /dev/pts 2>/dev/null
 
+# Boot log persistence: capture dmesg to the Debian rootfs so that any
+# failure during this rescue boot can be read back over SSH from the
+# working system after panic=10 auto-recovery (M2 blind-boot lesson).
+(
+    sleep 2
+    mkdir -p /mnt
+    if mount -t ext4 /dev/sda17 /mnt 2>/dev/null; then
+        K=$(uname -r)
+        dmesg > "/mnt/bootlog-rescue-$K.txt" 2>/dev/null
+        echo "rescue boot $(date -u +%Y%m%dT%H%M%SZ) kernel=$K" >> "/mnt/bootlog-rescue-$K.txt"
+        i=0
+        while true; do
+            sleep 10
+            i=$((i+1))
+            dmesg > "/mnt/bootlog-rescue-$K.txt" 2>/dev/null
+            sync
+        done
+    else
+        echo "rescue: rootfs mount failed" > /dev/kmsg 2>/dev/null
+    fi
+) &
+
 # Composite USB gadget: ACM(serial) + NCM/RNDIS(network). Without this the
 # post-g_serial-removal kernels enumerate no USB at all (M2 lesson).
 (
