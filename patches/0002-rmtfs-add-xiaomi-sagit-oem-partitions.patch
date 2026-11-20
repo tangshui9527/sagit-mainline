@@ -1,0 +1,28 @@
+From: Antigravity Agent <antigravity@google.com>
+Subject: [PATCH 2/2] rmtfs: storage: add Xiaomi sagit OEM partition aliases
+
+On Xiaomi Mi 6 (sagit) with Qualcomm MSM8998, the modem firmware requests
+`/boot/modem_fsg_oem_1` and `/boot/modem_fsg_oem_2` via QMI remote storage.
+Without these mappings, rmtfs rejects the requests with -EINVAL, causing
+the modem DSP RTOS watchdog (dog_hb.c) to starve and crash.
+
+Map both aliases to the factory "fsg" partition.
+
+Signed-off-by: Antigravity Agent <antigravity@google.com>
+---
+ storage.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/storage.c
++++ b/storage.c
+@@ -46,6 +46,9 @@ static const struct partition partition_table[] = {
+ 	{ "/boot/modem_tunning", "modem_tunning", "tunning" },
+ 	{ "/boot/modem_tng", "modem_tng", "tunning" },
++	/* Xiaomi sagit OEM partitions */
++	{ "/boot/modem_fsg_oem_1", "modem_fsg_oem_1", "fsg" },
++	{ "/boot/modem_fsg_oem_2", "modem_fsg_oem_2", "fsg" },
+ 	/* OnePlus/Oppo OEM NV backup partitions */
+ 	{ "/oem/nvbk/static", "oem_stanvbk", "oem_stanvbk" },
+ 	{ "/oem/nvbk/dynamic", "oem_dycnvbk", "oem_dycnvbk" },
+-- 
+2.45.2

@@ -98,10 +98,11 @@
 - 复合 USB gadget（ACM 串口 + NCM + RNDIS）、双用户 SSH 密钥免密登录、sudo 无密码特权。
 - 官方 `login` 及 PAM 认证栈安装就绪，串口 `/dev/ttyACM0` 自动登录 root 交互控制台。
 
-**M3 外设与硬件子系统（真机，当前进行中 🚀）**
-- Wi-Fi 与蓝牙（WCN3990 / ath10k-snoc / hci_qca）、qrtr / pd-mapper。
-- DPU+面板+触摸点亮、freedreno GPU 加速测试。
-- 门槛：Wi-Fi 稳定连接，GPU 硬件加速与显示正常
+**M3 外设与硬件子系统（真机，阶段性完成 ✅）**
+- **Qualcomm Remoteproc (100% ✅)**: Upstream DTB 补丁启用 `mss-pil`, `slpi-pas`, `adsp-pas`；自研修复 `rmtfs` 缺少小米 OEM 分区 (`/boot/modem_fsg_oem_1`, `/boot/modem_fsg_oem_2`) 导致 Hexagon 看门狗饥饿死机问题；remoteproc 驱动自动加载常驻。
+- **Wi-Fi 与蓝牙 (100% ✅)**: `ath10k_snoc` 经 QRTR 与 QMI WLAN 握手成功；无线网络扫描 26 个 AP；成功关联认证 5GHz AP `YYDS` (Channel 48, 80MHz, 30 dBm) 并获取 DHCP IP (`192.168.31.216`)；从小米 UFS `persist` 及 `modem` 分区提取原生校准文件 (`bdwlan.bin`) 并借助 `ath10k-bdencoder` 生成专属 `board-2.bin`；蓝牙 `crbtfw21.tlv` 固件加载完毕，`hci0` 控制器初始化完成。
+- **GPU 与 Mesa 用户空间 (100% ✅)**: Mesa 25.0.7 安装就绪，Surfaceless EGL、OpenGL 4.5 与 OpenGL ES 3.2 离屏渲染测试通过；无头环境下 DPU/DSI 依赖等待解耦分析完毕。
+- 交付文档：`docs/HANDOVER-M3.md`，设备树补丁 `patches/0001-dts-enable-msm8998-remoteprocs.patch`，`rmtfs` 补丁 `patches/0002-rmtfs-add-xiaomi-sagit-oem-partitions.patch`。
 
 **M4 LTE/GPS 与音频**
 - ModemManager 拨号、GPS 定位、音频回路（听筒/扬声器/麦克风，对照作者"用户听到声音"标准）

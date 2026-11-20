@@ -1,0 +1,81 @@
+[
+    {
+        "names": [
+            "bus=snoc,qmi-board-id=0,qmi-chip-id=0",
+            "bus=snoc,qmi-board-id=0"
+        ],
+        "data": "bus=snoc,qmi-board-id=0.bin"
+    },
+    {
+        "names": [
+            "bus=snoc,qmi-board-id=102"
+        ],
+        "data": "bus=snoc,qmi-board-id=102.bin"
+    },
+    {
+        "names": [
+            "bus=snoc,qmi-board-id=104"
+        ],
+        "data": "bus=snoc,qmi-board-id=104.bin"
+    },
+    {
+        "names": [
+            "bus=snoc,qmi-board-id=105"
+        ],
+        "data": "bus=snoc,qmi-board-id=105.bin"
+    },
+    {
+        "names": [
+            "bus=snoc,qmi-board-id=106"
+        ],
+        "data": "bus=snoc,qmi-board-id=106.bin"
+    },
+    {
+        "names": [
+            "bus=snoc,qmi-board-id=108"
+        ],
+        "data": "bus=snoc,qmi-board-id=108.bin"
+    },
+    {
+        "names": [
+            "bus=snoc,qmi-board-id=4"
+        ],
+        "data": "bus=snoc,qmi-board-id=4.bin"
+    },
+    {
+        "names": [
+            "bus=snoc,qmi-board-id=7"
+        ],
+        "data": "bus=snoc,qmi-board-id=7.bin"
+    },
+    {
+        "names": [
+            "bus=snoc,qmi-board-id=9"
+        ],
+        "data": "bus=snoc,qmi-board-id=9.bin"
+    },
+    {
+        "names": [
+            "bus=snoc,qmi-board-id=a"
+        ],
+        "data": "bus=snoc,qmi-board-id=a.bin"
+    },
+    {
+        "names": [
+            "bus=snoc,qmi-board-id=b"
+        ],
+        "data": "bus=snoc,qmi-board-id=b.bin"
+    },
+    {
+        "names": [
+            "bus=snoc,qmi-board-id=33"
+        ],
+        "data": "bus=snoc,qmi-board-id=33.bin"
+    },
+    {
+        "names": [
+            "bus=snoc,qmi-board-id=ff"
+        ],
+        "data": "bus=snoc,qmi-board-id=ff.bin"
+    }
+]
