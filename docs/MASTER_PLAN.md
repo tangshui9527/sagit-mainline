@@ -89,19 +89,19 @@
 - 产出：子系统主线上下表 v1 + 新内核 config 草案（以作者 config 为语义模板）
 - 门槛：每个子系统都有明确"用主线/打补丁/自研"结论
 
-**M1 内核首启（真机，仅临时引导）**
-- 构建 Image+DTB+initramfs（Debian rootfs 复用），`fastboot boot` 临时引导
-- 验收：内核日志到 switch_root、UFS 可挂载、串口/USB 设备枚举、dmesg 与作者 oracle 对照无异常 panic
-- 回滚：拔线重启；boot 分区未触碰
+**M1 内核首启（真机，已完成 ✅）**
+- 构建 Image+DTB+initramfs，`fastboot boot` 及裸机引导验证通过。
+- 验收：内核日志到 switch_root、UFS 可挂载、串口/USB 设备枚举正常。
 
-**M2 基础平台（真机，临时引导）**
-- UFS 读写、USB gadget（RNDIS+**ACM**，新内核原生）、SSH、Wi-Fi、蓝牙、充电读数、休眠唤醒
-- 验收标准沿用 PHASE2 §7 表；30 分钟 TCP 口径沿用作者 HARDWARE_TEST.json
-- 门槛：9 项全过 → 才允许讨论持久化
+**M2 基础平台与持久化（真机，已完成 ✅ 100%）**
+- UFS 读写、52GB rootfs 自动扩容、boot 分区持久化裸机冷启动。
+- 复合 USB gadget（ACM 串口 + NCM + RNDIS）、双用户 SSH 密钥免密登录、sudo 无密码特权。
+- 官方 `login` 及 PAM 认证栈安装就绪，串口 `/dev/ttyACM0` 自动登录 root 交互控制台。
 
-**M3 显示与 GPU（真机，临时引导 + 可选 userdata 试装）**
-- DPU+面板+触摸点亮、freedreno glxinfo、性能回归（ilertnost 提交数据为基准）
-- 门槛：桌面/wayland 可交互，GPU 渲染正常
+**M3 外设与硬件子系统（真机，当前进行中 🚀）**
+- Wi-Fi 与蓝牙（WCN3990 / ath10k-snoc / hci_qca）、qrtr / pd-mapper。
+- DPU+面板+触摸点亮、freedreno GPU 加速测试。
+- 门槛：Wi-Fi 稳定连接，GPU 硬件加速与显示正常
 
 **M4 LTE/GPS 与音频**
 - ModemManager 拨号、GPS 定位、音频回路（听筒/扬声器/麦克风，对照作者"用户听到声音"标准）

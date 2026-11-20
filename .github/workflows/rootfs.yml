@@ -43,7 +43,7 @@ jobs:
       - name: Bootstrap Debian 13 arm64 rootfs (mmdebstrap)
         run: |
           sudo mmdebstrap --arch=arm64 --variant=apt --mode=sudo \
-            --include="systemd,systemd-sysv,dbus,openssh-server,network-manager,wpasupplicant,initramfs-tools,e2fsprogs,python3,chrony,kmod,sudo,ca-certificates,iproute2,iputils-ping,udev,nano,udhcpd,locales" \
+            --include="systemd,systemd-sysv,dbus,openssh-server,network-manager,wpasupplicant,initramfs-tools,e2fsprogs,python3,chrony,kmod,sudo,ca-certificates,iproute2,iputils-ping,udev,nano,udhcpd,locales,login,util-linux,bash-completion,curl,wget,htop" \
             trixie rootfs http://deb.debian.org/debian
           # Qualcomm userspace (may not all exist in trixie; record what lands)
           sudo chroot rootfs /bin/sh -c '
@@ -72,10 +72,18 @@ jobs:
             usermod -aG sudo mi6"
           sudo cp rootfs-integration/sudoers-mi6 rootfs/etc/sudoers.d/mi6
           sudo chmod 440 rootfs/etc/sudoers.d/mi6
-          # ssh: fresh host keys on first boot
+          # ssh: fresh host keys on first boot + preinstall authorized_keys
           sudo sh -c 'rm -f rootfs/etc/ssh/ssh_host_*'
           sudo mkdir -p rootfs/etc/systemd/system/ssh.service.d
           sudo cp rootfs-integration/ssh/ssh-keygen-override.conf rootfs/etc/systemd/system/ssh.service.d/override.conf
+          if [ -f rootfs-integration/ssh/authorized_keys ]; then
+            sudo mkdir -p rootfs/root/.ssh rootfs/home/mi6/.ssh
+            sudo cp rootfs-integration/ssh/authorized_keys rootfs/root/.ssh/
+            sudo cp rootfs-integration/ssh/authorized_keys rootfs/home/mi6/.ssh/
+            sudo chmod 700 rootfs/root/.ssh rootfs/home/mi6/.ssh
+            sudo chmod 600 rootfs/root/.ssh/authorized_keys rootfs/home/mi6/.ssh/authorized_keys
+            sudo chown -R 1000:1000 rootfs/home/mi6/.ssh
+          fi
           # mi6 services + scripts
           sudo cp rootfs-integration/sbin/mi6-usb-gadget   rootfs/usr/local/sbin/
           sudo cp rootfs-integration/sbin/mi6-grow-rootfs  rootfs/usr/local/sbin/
@@ -93,6 +101,10 @@ jobs:
           # serial login over USB ACM (ttyGS0) + NCM DHCP for the host
           sudo mkdir -p rootfs/etc/systemd/system/getty.target.wants rootfs/var/lib
           sudo ln -sf /lib/systemd/system/serial-getty@.service rootfs/etc/systemd/system/getty.target.wants/serial-getty@ttyGS0.service
+          if [ -d rootfs-integration/systemd/serial-getty@ttyGS0.service.d ]; then
+            sudo mkdir -p rootfs/etc/systemd/system/serial-getty@ttyGS0.service.d
+            sudo cp -r rootfs-integration/systemd/serial-getty@ttyGS0.service.d/* rootfs/etc/systemd/system/serial-getty@ttyGS0.service.d/
+          fi
           sudo cp rootfs-integration/udhcpd.conf rootfs/etc/udhcpd.conf
           # keep initramfs lean-but-complete
           sudo sh -c 'echo "MODULES=most" > rootfs/etc/initramfs-tools/conf.d/mi6'
