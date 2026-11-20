@@ -43,7 +43,7 @@ jobs:
       - name: Bootstrap Debian 13 arm64 rootfs (mmdebstrap)
         run: |
           sudo mmdebstrap --arch=arm64 --variant=apt --mode=sudo \
-            --include="systemd,systemd-sysv,dbus,openssh-server,network-manager,wpasupplicant,initramfs-tools,e2fsprogs,python3,chrony,kmod,sudo,ca-certificates,iproute2,iputils-ping,udev,nano,udhcpd,locales,login,util-linux,bash-completion,curl,wget,htop" \
+            --include="systemd,systemd-sysv,dbus,openssh-server,network-manager,wpasupplicant,initramfs-tools,e2fsprogs,python3,chrony,kmod,sudo,ca-certificates,iproute2,iputils-ping,udev,nano,udhcpd,locales,login,util-linux,bash-completion,curl,wget,htop,fake-hwclock" \
             trixie rootfs http://deb.debian.org/debian
           # Qualcomm userspace (may not all exist in trixie; record what lands)
           sudo chroot rootfs /bin/sh -c '
@@ -83,6 +83,17 @@ jobs:
             sudo chmod 700 rootfs/root/.ssh rootfs/home/mi6/.ssh
             sudo chmod 600 rootfs/root/.ssh/authorized_keys rootfs/home/mi6/.ssh/authorized_keys
             sudo chown -R 1000:1000 rootfs/home/mi6/.ssh
+          fi
+          # headless server robustness & UFS flash protection
+          sudo mkdir -p rootfs/etc/sysctl.d rootfs/etc/ssh/sshd_config.d rootfs/etc/systemd/journald.conf.d
+          if [ -d rootfs-integration/sysctl.d ]; then
+            sudo cp -r rootfs-integration/sysctl.d/* rootfs/etc/sysctl.d/
+          fi
+          if [ -f rootfs-integration/ssh/keepalive.conf ]; then
+            sudo cp rootfs-integration/ssh/keepalive.conf rootfs/etc/ssh/sshd_config.d/
+          fi
+          if [ -f rootfs-integration/systemd/journald-size-limit.conf ]; then
+            sudo cp rootfs-integration/systemd/journald-size-limit.conf rootfs/etc/systemd/journald.conf.d/
           fi
           # mi6 services + scripts
           sudo cp rootfs-integration/sbin/mi6-usb-gadget   rootfs/usr/local/sbin/
