@@ -36,11 +36,34 @@ jobs:
             https://github.com/gregkh/linux kernel
           cd kernel && git rev-parse HEAD
 
-      - name: Fetch ilertnost sagit_defconfig
+      - name: Fetch ilertnost sagit_defconfig + dts + cherry-pick device fixes
         run: |
           curl -fL -o kernel/arch/arm64/configs/sagit_defconfig \
             https://raw.githubusercontent.com/ilertnost/kernel_xiaomi_msm8998-mainline/master/arch/arm64/configs/sagit_defconfig
           wc -l kernel/arch/arm64/configs/sagit_defconfig
+          # bring the device fixes: clone ilertnost (full, for history) and
+          # cherry-pick the driver commits onto 7.3.5; replace the dts wholesale
+          git clone --filter=blob:none \
+            https://github.com/ilertnost/kernel_xiaomi_msm8998-mainline ilertnost
+          cd ilertnost
+          git fetch -q --filter=blob:none https://github.com/gregkh/linux refs/tags/v7.2.11:refs/tags/v7.2.11 || true
+          cd ../kernel
+          IL=$(cd ../ilertnost && git rev-parse HEAD)
+          # wholesale dts replacement (their coherent sagit dts state)
+          cp ../ilertnost/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts \
+             arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
+          # cherry-pick non-dts device driver fixes (cpufreq/clk/ath10k/drm/sound),
+          # tolerating conflicts (report and skip)
+          for C in $(git -C ../ilertnost log --format='%h' --no-patch \
+              v7.2.11..$IL -- drivers/ sound/ net/wireless/ 2>/dev/null | tac); do
+            if git cherry-pick -x --keep-redundant-commits $C >/dev/null 2>&1; then
+              echo "picked $C"
+            else
+              echo "CONFLICT-SKIP: $C $(git -C ../ilertnost log -1 --format=%s $C | head -c 60)"
+              git cherry-pick --abort 2>/dev/null || git reset --hard HEAD >/dev/null 2>&1 || true
+            fi
+          done
+          git log --oneline -15 | head -15
 
       - name: Configure (sagit_defconfig + mi6.fragment)
         run: |
