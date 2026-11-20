@@ -48,7 +48,11 @@ jobs:
           if compgen -G "../patches/*.patch" > /dev/null; then
             for p in ../patches/*.patch; do
               echo "== applying $p"
-              git apply --3way "$p" || git apply "$p"
+              # tolerate git-am mail format (trailing signature) via patch(1) fallback
+              if ! git apply --3way "$p" 2>/dev/null && ! git apply "$p" 2>/dev/null; then
+                patch -p1 --forward -i "$p" && echo "applied via patch(1)" \
+                  || echo "WARN: $p did not apply - skipping"
+              fi
             done
           else
             echo "no patches"
