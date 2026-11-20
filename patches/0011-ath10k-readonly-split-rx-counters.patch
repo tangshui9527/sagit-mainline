@@ -1,0 +1,36 @@
+Subject: wifi: ath10k: expose read-only split RX counters for Mi 6 validation
+Upstream: local observation only
+
+--- a/drivers/net/wireless/ath/ath10k/htt_rx.c
++++ b/drivers/net/wireless/ath/ath10k/htt_rx.c
+@@ -20,6 +20,14 @@
+ #define HTT_RX_RING_REFILL_RETRY_MS 50
+ 
+ #define HTT_RX_RING_REFILL_RESCHED_MS 5
++
++/* This phone has one SNOC radio; RX updates run under its rx_ring lock. */
++static unsigned long rx_split_stashed;
++module_param(rx_split_stashed, ulong, 0444);
++MODULE_PARM_DESC(rx_split_stashed, "Incomplete in-order MSDU lists retained");
++static unsigned long rx_split_resumed;
++module_param(rx_split_resumed, ulong, 0444);
++MODULE_PARM_DESC(rx_split_resumed, "Retained MSDU lists prepended to a continuation");
+ 
+ /* shortcut to interpret a raw memory buffer as a rx descriptor */
+ #define HTT_RX_BUF_TO_RX_DESC(hw, buf) ath10k_htt_rx_desc_from_raw_buffer(hw, buf)
+@@ -3314,6 +3322,7 @@
+ 			return -EIO;
+ 		}
+ 
++		rx_split_resumed++;
+ 		skb_queue_splice_init(&htt->rx_in_ord_split.msdus, &list);
+ 	}
+ 
+@@ -3367,6 +3376,7 @@
+ 				return -EIO;
+ 			}
+ 
++			rx_split_stashed++;
+ 			htt->rx_in_ord_split.tid = tid;
+ 			htt->rx_in_ord_split.peer_id = peer_id;
+ 			htt->rx_in_ord_split.frag = frag;

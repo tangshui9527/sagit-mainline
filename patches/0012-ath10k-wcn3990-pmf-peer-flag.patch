@@ -1,0 +1,41 @@
+Subject: wifi: ath10k: set the PMF peer flag on WCN3990 (6.0 backport)
+Author: Shunsuke Nagashima
+Upstream: https://lkml.rescloud.iu.edu/hypermail/linux/kernel/2610.1/19751.html
+Status: posted ath-next series, 2026-10-16; not asserted merged
+
+--- a/drivers/net/wireless/ath/ath10k/core.c
++++ b/drivers/net/wireless/ath/ath10k/core.c
+@@ -693,6 +693,7 @@
+ 		.tx_stats_over_pktlog = false,
+ 		.dynamic_sar_support = true,
+ 		.hw_restart_disconnect = true,
++		.peer_pmf_support = true,
+ 	},
+ };
+ 
+--- a/drivers/net/wireless/ath/ath10k/hw.h
++++ b/drivers/net/wireless/ath/ath10k/hw.h
+@@ -635,6 +635,9 @@
+ 	bool dynamic_sar_support;
+ 
+ 	bool hw_restart_disconnect;
++
++	/* PMF peer flag is supported despite absent firmware feature bit. */
++	bool peer_pmf_support;
+ };
+ 
+ struct htt_resp;
+--- a/drivers/net/wireless/ath/ath10k/mac.c
++++ b/drivers/net/wireless/ath/ath10k/mac.c
+@@ -2232,8 +2232,9 @@
+ 	}
+ 
+ 	if (sta->mfp &&
+-	    test_bit(ATH10K_FW_FEATURE_MFP_SUPPORT,
+-		     ar->running_fw->fw_file.fw_features)) {
++	    (test_bit(ATH10K_FW_FEATURE_MFP_SUPPORT,
++		      ar->running_fw->fw_file.fw_features) ||
++	     ar->hw_params.peer_pmf_support)) {
+ 		arg->peer_flags |= ar->wmi.peer_flags->pmf;
+ 	}
+ }

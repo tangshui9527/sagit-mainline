@@ -64,6 +64,24 @@ jobs:
           sudo cp rootfs-integration/NetworkManager/mi6-usb.nmconnection rootfs/etc/NetworkManager/system-connections/
           sudo chmod 600 rootfs/etc/NetworkManager/system-connections/mi6-usb.nmconnection
           sudo cp rootfs-integration/NetworkManager/99-mi6-ncm-mac.conf rootfs/etc/NetworkManager/conf.d/ || true
+          if [ -f rootfs-integration/NetworkManager/disable-powersave.conf ]; then
+            sudo cp rootfs-integration/NetworkManager/disable-powersave.conf rootfs/etc/NetworkManager/conf.d/
+          fi
+          # modprobe, tmpfiles, and fast reboot limits
+          sudo mkdir -p rootfs/etc/modprobe.d rootfs/etc/tmpfiles.d rootfs/etc/systemd/system.conf.d
+          if [ -f rootfs-integration/modprobe.d/mi6.conf ]; then
+            sudo cp rootfs-integration/modprobe.d/mi6.conf rootfs/etc/modprobe.d/
+          fi
+          if [ -f rootfs-integration/tmpfiles.d/tqftpserv.conf ]; then
+            sudo cp rootfs-integration/tmpfiles.d/tqftpserv.conf rootfs/etc/tmpfiles.d/
+          fi
+          if [ -f rootfs-integration/systemd/10-fast-reboot.conf ]; then
+            sudo cp rootfs-integration/systemd/10-fast-reboot.conf rootfs/etc/systemd/system.conf.d/
+          fi
+          # locale setup (generate en_US.UTF-8)
+          sudo sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' rootfs/etc/locale.gen || true
+          sudo chroot rootfs locale-gen || true
+          sudo chroot rootfs update-locale LANG=en_US.UTF-8 || true
           # users: root + mi6 (documented initial password, change after first login)
           sudo chroot rootfs /bin/bash -c "
             echo root:$INITIAL_PW | chpasswd
