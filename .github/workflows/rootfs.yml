@@ -10,7 +10,7 @@ jobs:
     env:
       TREE_REF: ea08c09791cddbfc57c995e154c20d09738339a3
       ROOT_UUID: 1004ca69-66ba-4341-8e6c-a61e76a96a2b
-      INITIAL_PW: sagit1234
+      INITIAL_PW: toor
     steps:
       - name: Checkout project repo
         uses: actions/checkout@v4
