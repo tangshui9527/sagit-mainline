@@ -109,6 +109,7 @@ flowchart TD
 - ❌ **屏幕显示与触摸屏修复**：屏幕硬件已物理损坏，此设备定位为无头服务器，屏幕与触控组件永久忽略。
 
 ### 2. 即将开展的核心计划（阶段二：服务器化就绪）
+- [ ] **断网自动 AP 配网热点（Wi-Fi Provisioning / Hotspot Fallback）**：当设备断开已知 Wi-Fi 超过设定时间（如 30 秒）时，自动拉起 AP 配网热点（如 SSID `Mi6-Setup`，IP `192.168.12.1`），允许手机连入通过 Web/SSH 配置新 Wi-Fi，配置成功后切回客户端模式。（WCN3990 硬件已实测支持 `AP` 模式与多接口组合）。
 - [ ] **Docker / Podman 容器支持验证**：核对内核 `cgroup`、`namespaces`、`overlay2` 模块支持情况，确保可在本机直接拉取容器跑服务。
 - [ ] **电池保护机制与旁路供电补丁**：针对 `qcom_pmi8998_charger` 打入 sysfs 控制补丁，使充入电流可归零并支持旁路供电。
 - [ ] **热管理优化（Thermal Throttle Tuning）**：调优 `thermal_zone` 阈值，保证长时间满载时平稳降频，不产生内核 panic。
