@@ -26,13 +26,23 @@ jobs:
       - name: Checkout project repo
         uses: actions/checkout@v4
 
-      - name: Install toolchain
+      - name: ccache restore
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-kernel-${{ env.TREE_REF }}
+          restore-keys: ccache-kernel-${{ env.TREE_REF }}
+
+      - name: Install toolchain (with ccache)
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
             flex bison bc libssl-dev libelf-dev cpio python3-dev \
-            build-essential dwarves zstd
+            build-essential dwarves zstd ccache
+          ccache --set-config cache_dir=~/.ccache
+          ccache --set-config max_size=5G
+          ccache -z
 
       - name: Clone kernel bring-up tree (pinned)
         run: |
@@ -68,6 +78,7 @@ jobs:
 
       - name: Build kernel and DTB
         run: |
+          export PATH="/usr/lib/ccache:$PATH"
           cd kernel
           make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image dtbs
           KVER=$(make -s ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- kernelversion)
@@ -141,6 +152,9 @@ jobs:
           print('header ok: kernel=%d@%#x ramdisk=%d@%#x tags=%#x page=%d' % (ks,ka,rs,ra,ta,ps))
           EOF
           ls -la boot.img
+
+      - name: ccache stats
+        run: ccache -s 2>/dev/null | head -8 || true
 
       - name: Collect artifacts
         run: |
