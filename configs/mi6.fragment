@@ -1,7 +1,4 @@
 # Mi 6 Debian 移植配置片段：合并到 ilertnost sagit_defconfig 之上
-# Disable legacy monolithic serial gadget so ConfigFS has full control of UDC
-# CONFIG_USB_G_SERIAL is not set
-
 # USB gadget：ACM 串口（救援通道）+ NCM (macOS + Linux 免驱以太网) + RNDIS 网络，configfs 方式
 CONFIG_USB_CONFIGFS=y
 CONFIG_USB_CONFIGFS_ACM=y
