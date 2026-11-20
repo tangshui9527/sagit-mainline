@@ -1,0 +1,9 @@
+[Unit]
+Description=Qualcomm diagnostic router
+After=pd-mapper.service qrtr-ns.service
+[Service]
+ExecStart=/usr/bin/diag-router
+Restart=on-failure
+RestartSec=5
+[Install]
+WantedBy=multi-user.target

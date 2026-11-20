@@ -110,16 +110,27 @@ jobs:
           if [ -f rootfs-integration/ssh/keepalive.conf ]; then
             sudo cp rootfs-integration/ssh/keepalive.conf rootfs/etc/ssh/sshd_config.d/
           fi
+          if [ -f rootfs-integration/ssh/10-interactive-fast.conf ]; then
+            sudo cp rootfs-integration/ssh/10-interactive-fast.conf rootfs/etc/ssh/sshd_config.d/
+          fi
           if [ -f rootfs-integration/systemd/journald-size-limit.conf ]; then
             sudo cp rootfs-integration/systemd/journald-size-limit.conf rootfs/etc/systemd/journald.conf.d/
           fi
           # mi6 services + scripts
           sudo cp rootfs-integration/sbin/mi6-usb-gadget   rootfs/usr/local/sbin/
           sudo cp rootfs-integration/sbin/mi6-grow-rootfs  rootfs/usr/local/sbin/
+          if [ -f rootfs-integration/bin/diag-router ]; then
+            sudo cp rootfs-integration/bin/diag-router rootfs/usr/bin/
+            sudo chmod 755 rootfs/usr/bin/diag-router
+          fi
           sudo chmod 755 rootfs/usr/local/sbin/mi6-usb-gadget rootfs/usr/local/sbin/mi6-grow-rootfs
           sudo mkdir -p rootfs/etc/systemd/system/multi-user.target.wants
           sudo cp rootfs-integration/systemd/mi6-usb-gadget.service  rootfs/etc/systemd/system/
           sudo cp rootfs-integration/systemd/mi6-grow-rootfs.service rootfs/etc/systemd/system/
+          if [ -f rootfs-integration/systemd/diag-router.service ]; then
+            sudo cp rootfs-integration/systemd/diag-router.service rootfs/etc/systemd/system/
+            sudo ln -sf /etc/systemd/system/diag-router.service rootfs/etc/systemd/system/multi-user.target.wants/diag-router.service
+          fi
           sudo ln -sf /etc/systemd/system/mi6-usb-gadget.service  rootfs/etc/systemd/system/multi-user.target.wants/mi6-usb-gadget.service
           sudo ln -sf /etc/systemd/system/mi6-grow-rootfs.service rootfs/etc/systemd/system/multi-user.target.wants/mi6-grow-rootfs.service
           sudo ln -sf /lib/systemd/system/ssh.service             rootfs/etc/systemd/system/multi-user.target.wants/ssh.service
