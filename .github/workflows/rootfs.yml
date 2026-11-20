@@ -72,8 +72,8 @@ jobs:
           if [ -f rootfs-integration/modprobe.d/mi6.conf ]; then
             sudo cp rootfs-integration/modprobe.d/mi6.conf rootfs/etc/modprobe.d/
           fi
-          if [ -f rootfs-integration/tmpfiles.d/tqftpserv.conf ]; then
-            sudo cp rootfs-integration/tmpfiles.d/tqftpserv.conf rootfs/etc/tmpfiles.d/
+          if [ -d rootfs-integration/tmpfiles.d ]; then
+            sudo cp -r rootfs-integration/tmpfiles.d/* rootfs/etc/tmpfiles.d/
           fi
           if [ -f rootfs-integration/systemd/10-fast-reboot.conf ]; then
             sudo cp rootfs-integration/systemd/10-fast-reboot.conf rootfs/etc/systemd/system.conf.d/
