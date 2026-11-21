@@ -1,0 +1,92 @@
+Subject: wifi: ath10k: make in-order RX A-MSDU buffers persistent (v4, 6.0 backport)
+Upstream: https://patchew.org/linux/20261020-ath10k-a-msdu-v4-1-670b69d39059@ixit.cz/
+
+--- a/drivers/net/wireless/ath/ath10k/htt.h
++++ b/drivers/net/wireless/ath/ath10k/htt.h
+@@ -1923,6 +1923,16 @@
+ 	bool bundle_tx;
+ 	struct sk_buff_head tx_req_head;
+ 	struct sk_buff_head tx_complete_head;
++
++	/* MSDUs of an MPDU left incomplete by an in-order indication, waiting
++	 * for the next indication to continue it
++	 */
++	struct {
++		u8 tid;
++		u16 peer_id;
++		bool frag;
++		struct sk_buff_head msdus;
++	} rx_in_ord_split;
+ };
+ 
+ struct ath10k_htt_tx_ops {
+--- a/drivers/net/wireless/ath/ath10k/htt_rx.c
++++ b/drivers/net/wireless/ath/ath10k/htt_rx.c
+@@ -292,6 +292,8 @@
+ 	skb_queue_purge(&htt->rx_in_ord_compl_q);
+ 	skb_queue_purge(&htt->tx_fetch_ind_q);
+ 
++	skb_queue_purge(&htt->rx_in_ord_split.msdus);
++
+ 	spin_lock_bh(&htt->rx_ring.lock);
+ 	ath10k_htt_rx_ring_free(htt);
+ 	spin_unlock_bh(&htt->rx_ring.lock);
+@@ -836,6 +838,8 @@
+ 	skb_queue_head_init(&htt->rx_in_ord_compl_q);
+ 	skb_queue_head_init(&htt->tx_fetch_ind_q);
+ 	atomic_set(&htt->num_mpdus_ready, 0);
++
++	skb_queue_head_init(&htt->rx_in_ord_split.msdus);
+ 
+ 	ath10k_dbg(ar, ATH10K_DBG_BOOT, "htt rx ring size %d fill_level %d\n",
+ 		   htt->rx_ring.size, htt->rx_ring.fill_level);
+@@ -3296,6 +3300,23 @@
+ 	 * extracted and processed.
+ 	 */
+ 	__skb_queue_head_init(&list);
++
++	if (!skb_queue_empty(&htt->rx_in_ord_split.msdus)) {
++		/* Resume only the same peer/TID/fragment stream. */
++		if (tid != htt->rx_in_ord_split.tid ||
++		    peer_id != htt->rx_in_ord_split.peer_id ||
++		    frag != htt->rx_in_ord_split.frag ||
++		    offload) {
++			ath10k_warn(ar, "split amsdu did not resume immediately\n");
++			htt->rx_confused = true;
++			__skb_queue_purge(&htt->rx_in_ord_split.msdus);
++			ath10k_core_start_recovery(ar);
++			return -EIO;
++		}
++
++		skb_queue_splice_init(&htt->rx_in_ord_split.msdus, &list);
++	}
++
+ 	if (ar->hw_params.target_64bit)
+ 		ret = ath10k_htt_rx_pop_paddr64_list(htt, &resp->rx_in_ord_ind,
+ 						     &list);
+@@ -3334,7 +3355,24 @@
+ 			ath10k_htt_rx_h_enqueue(ar, &amsdu, status);
+ 			break;
+ 		case -EAGAIN:
+-			fallthrough;
++			/* Keep the actual incomplete payload for the next indication.
++			 * Bound the stash if the firmware never sends LAST_MSDU.
++			 */
++			if (skb_queue_len(&list) > HTT_RX_RING_SIZE) {
++				ath10k_warn(ar, "split amsdu exceeds %d msdus\n",
++					    HTT_RX_RING_SIZE);
++				htt->rx_confused = true;
++				__skb_queue_purge(&list);
++				ath10k_core_start_recovery(ar);
++				return -EIO;
++			}
++
++			htt->rx_in_ord_split.tid = tid;
++			htt->rx_in_ord_split.peer_id = peer_id;
++			htt->rx_in_ord_split.frag = frag;
++			skb_queue_splice_init(&list,
++					      &htt->rx_in_ord_split.msdus);
++			return 0;
+ 		default:
+ 			/* Should not happen. */
+ 			ath10k_warn(ar, "failed to extract amsdu: %d\n", ret);
