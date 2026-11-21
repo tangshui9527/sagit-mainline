@@ -52,6 +52,13 @@ jobs:
           # wholesale dts replacement (their coherent sagit dts state)
           cp ../ilertnost/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts \
              arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
+          # Apply sagit device tree patches (enable Hexagon remoteprocs for WCN3990 Wi-Fi & audio)
+          for P in ../patches/*.patch; do
+            if [ -f "$P" ]; then
+              echo "Applying $P..."
+              patch -p1 < "$P" || echo "WARN: failed to apply $P"
+            fi
+          done
           # cherry-pick non-dts device driver fixes (cpufreq/clk/ath10k/drm/sound),
           # tolerating conflicts (report and skip)
           for C in $(git -C ../ilertnost log --format='%h' --no-patch \
