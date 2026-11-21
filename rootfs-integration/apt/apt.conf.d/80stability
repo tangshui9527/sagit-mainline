@@ -1,0 +1,5 @@
+Acquire::Queue-Mode "access";
+Acquire::http::Pipeline-Depth "0";
+Acquire::https::Pipeline-Depth "0";
+Acquire::http::Dl-Limit "1500";
+Acquire::https::Dl-Limit "1500";
