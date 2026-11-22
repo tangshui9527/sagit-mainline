@@ -1,0 +1,11 @@
+[Unit]
+Description=Start Qualcomm ADSP and SLPI Remoteprocs
+After=remoteproc-mss.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'for r in /sys/class/remoteproc/remoteproc*/state; do [ -e "$r" ] && echo start > "$r" 2>/dev/null || true; done'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -67,8 +67,11 @@ jobs:
           if [ -f rootfs-integration/NetworkManager/disable-powersave.conf ]; then
             sudo cp rootfs-integration/NetworkManager/disable-powersave.conf rootfs/etc/NetworkManager/conf.d/
           fi
-          # modprobe, tmpfiles, and fast reboot limits
-          sudo mkdir -p rootfs/etc/modprobe.d rootfs/etc/tmpfiles.d rootfs/etc/systemd/system.conf.d
+          # modprobe, modules-load.d, tmpfiles, and fast reboot limits
+          sudo mkdir -p rootfs/etc/modprobe.d rootfs/etc/modules-load.d rootfs/etc/tmpfiles.d rootfs/etc/systemd/system.conf.d
+          if [ -d rootfs-integration/modules-load.d ]; then
+            sudo cp -r rootfs-integration/modules-load.d/* rootfs/etc/modules-load.d/
+          fi
           if [ -f rootfs-integration/modprobe.d/mi6.conf ]; then
             sudo cp rootfs-integration/modprobe.d/mi6.conf rootfs/etc/modprobe.d/
           fi
@@ -130,6 +133,22 @@ jobs:
           if [ -f rootfs-integration/systemd/diag-router.service ]; then
             sudo cp rootfs-integration/systemd/diag-router.service rootfs/etc/systemd/system/
             sudo ln -sf /etc/systemd/system/diag-router.service rootfs/etc/systemd/system/multi-user.target.wants/diag-router.service
+          fi
+          if [ -f rootfs-integration/systemd/sagit-console.service ]; then
+            sudo cp rootfs-integration/systemd/sagit-console.service rootfs/etc/systemd/system/
+            sudo ln -sf /etc/systemd/system/sagit-console.service rootfs/etc/systemd/system/multi-user.target.wants/sagit-console.service
+          fi
+          if [ -f rootfs-integration/systemd/remoteproc-mss.service ]; then
+            sudo cp rootfs-integration/systemd/remoteproc-mss.service rootfs/etc/systemd/system/
+            sudo ln -sf /etc/systemd/system/remoteproc-mss.service rootfs/etc/systemd/system/multi-user.target.wants/remoteproc-mss.service
+          fi
+          if [ -f rootfs-integration/systemd/remoteproc-pas.service ]; then
+            sudo cp rootfs-integration/systemd/remoteproc-pas.service rootfs/etc/systemd/system/
+            sudo ln -sf /etc/systemd/system/remoteproc-pas.service rootfs/etc/systemd/system/multi-user.target.wants/remoteproc-pas.service
+          fi
+          if [ -d rootfs-integration/systemd/rmtfs.service.d ]; then
+            sudo mkdir -p rootfs/etc/systemd/system/rmtfs.service.d
+            sudo cp -r rootfs-integration/systemd/rmtfs.service.d/* rootfs/etc/systemd/system/rmtfs.service.d/
           fi
           sudo ln -sf /etc/systemd/system/mi6-usb-gadget.service  rootfs/etc/systemd/system/multi-user.target.wants/mi6-usb-gadget.service
           sudo ln -sf /etc/systemd/system/mi6-grow-rootfs.service rootfs/etc/systemd/system/multi-user.target.wants/mi6-grow-rootfs.service

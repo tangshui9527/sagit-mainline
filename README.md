@@ -24,4 +24,9 @@ GitHub Actions 自动构建（push / 手动触发）：
 
 ## 当前状态
 
-M0/M1 阶段：CI 编译打通 + `fastboot boot` 内核首启验证（仅临时引导，不触碰持久分区）。
+- **内核版本**：Linux Upstream 7.3.5 V2（内置 `CONFIG_NF_TABLES=y` + `0002-ath10k-persist-split-amsdu.patch`）。
+- **用户空间**：Debian 13 (Trixie) ARM64 原生根文件系统。
+- **Hexagon 子系统**：Modem (MSS)、Sensors (SLPI)、Audio (ADSP) 全三路 Remoteproc 启动正常。
+- **无线网络**：WCN3990 Wi-Fi (`ath10k_snoc`) 自动接入，高并发网络下基带 Hexagon DSP 稳定不崩溃。
+- **管理通道**：USB CDC-ACM 串口（`/dev/cu.usbmodem21201` 免密 root 自动登录）+ Wi-Fi SSH（默认 IP `192.168.31.6`）双通道直通。
+- **容器环境**：原生 `iptables v1.8.11 (nf_tables)` 支持 Docker 与 Tailscale。

@@ -59,6 +59,26 @@ jobs:
               patch -p1 < "$P" || echo "WARN: failed to apply $P"
             fi
           done
+          # Guarantee Hexagon remoteprocs (Modem MSS, Sensors SLPI, Audio ADSP) are enabled in DTS
+          if ! grep -q "&mss_pil" arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts; then
+            cat << 'EOF_DTS' >> arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
+
+&mss_pil {
+	firmware-name = "qcom/msm8998/xiaomi/mba.mbn", "qcom/msm8998/xiaomi/modem.mbn";
+	status = "okay";
+};
+
+&slpi_pas {
+	firmware-name = "qcom/msm8998/xiaomi/slpi_v2.mbn";
+	status = "okay";
+};
+
+&adsp_pas {
+	firmware-name = "qcom/msm8998/xiaomi/adsp.mbn";
+	status = "okay";
+};
+EOF_DTS
+          fi
           # cherry-pick non-dts device driver fixes (cpufreq/clk/ath10k/drm/sound),
           # tolerating conflicts (report and skip)
           for C in $(git -C ../ilertnost log --format='%h' --no-patch \

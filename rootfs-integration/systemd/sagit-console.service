@@ -1,0 +1,21 @@
+[Unit]
+Description=Sagit USB CDC ACM Console (Root Auto-login)
+DefaultDependencies=no
+After=systemd-udevd.service
+Before=multi-user.target shutdown.target
+
+[Service]
+Type=idle
+ExecStart=-/bin/sh -c 'while true; do test -c /dev/ttyGS0 && exec /sbin/agetty --noclear -a root ttyGS0 115200 linux; sleep 1; done'
+Restart=always
+RestartSec=1
+UtmpIdentifier=gs0
+TTYPath=/dev/ttyGS0
+TTYReset=yes
+TTYVHangup=yes
+KillMode=process
+IgnoreSIGPIPE=no
+SendSIGHUP=yes
+
+[Install]
+WantedBy=multi-user.target

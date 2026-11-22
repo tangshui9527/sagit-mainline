@@ -1,0 +1,12 @@
+[Unit]
+Description=Start Qualcomm MSS Remoteproc
+After=rmtfs.service
+Wants=rmtfs.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'for i in $(seq 1 30); do if [ -e /sys/class/remoteproc/remoteproc0/state ]; then echo start > /sys/class/remoteproc/remoteproc0/state; break; fi; sleep 0.2; done'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
