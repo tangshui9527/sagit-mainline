@@ -1,0 +1,25 @@
+#!/bin/bash
+# Xiaomi Mi 6 Battery Protection Daemon
+# Prevents battery swelling and degradation by clamping charge between 70% and 80%.
+STOP_THRESHOLD=${STOP_THRESHOLD:-80}
+START_THRESHOLD=${START_THRESHOLD:-70}
+CHARGER="/sys/class/power_supply/pmi8998_charger"
+BATTERY="/sys/class/power_supply/battery"
+
+logger -t mi6-battery-guard "Daemon started (Stop threshold: ${STOP_THRESHOLD}%, Resume threshold: ${START_THRESHOLD}%)"
+
+while true; do
+    if [ -f "$BATTERY/capacity" ] && [ -d "$CHARGER" ]; then
+        CAP=$(cat "$BATTERY/capacity" 2>/dev/null || echo 0)
+        STATUS=$(cat "$BATTERY/status" 2>/dev/null || echo "Unknown")
+
+        if [ "$CAP" -ge "$STOP_THRESHOLD" ] && [ "$STATUS" = "Charging" ]; then
+            echo 0 > "$CHARGER/status" 2>/dev/null || true
+            logger -t mi6-battery-guard "Battery at ${CAP}% >= ${STOP_THRESHOLD}%, charging suspended"
+        elif [ "$CAP" -le "$START_THRESHOLD" ]; then
+            echo 1 > "$CHARGER/status" 2>/dev/null || true
+            logger -t mi6-battery-guard "Battery at ${CAP}% <= ${START_THRESHOLD}%, charging resumed"
+        fi
+    fi
+    sleep 30
+done

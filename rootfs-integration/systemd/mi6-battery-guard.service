@@ -1,0 +1,12 @@
+[Unit]
+Description=Xiaomi Mi 6 Battery Health & Charge Limit Protection Guard
+After=systemd-modules-load.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mi6-battery-guard
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

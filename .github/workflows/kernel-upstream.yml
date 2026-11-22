@@ -1,6 +1,11 @@
 name: kernel-upstream-test
 
 on:
+  push:
+    paths:
+      - '.github/workflows/kernel-upstream.yml'
+      - 'configs/**'
+      - 'patches/**'
   workflow_dispatch:
     inputs:
       tag:
