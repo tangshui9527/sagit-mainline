@@ -1,13 +1,6 @@
 [
     {
         "names": [
-            "bus=snoc,qmi-board-id=0,qmi-chip-id=0",
-            "bus=snoc,qmi-board-id=0"
-        ],
-        "data": "bus=snoc,qmi-board-id=0.bin"
-    },
-    {
-        "names": [
             "bus=snoc,qmi-board-id=102"
         ],
         "data": "bus=snoc,qmi-board-id=102.bin"

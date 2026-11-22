@@ -324,6 +324,10 @@ jobs:
           EOF
           sudo rsync -a fw-root/usr/ rootfs/usr/ 2>/dev/null || echo "no usr/ in firmware pkgs (fine)"
           sudo rsync -a fw-root/lib/ rootfs/lib/
+          if [ -d rootfs-integration/firmware ]; then
+            sudo rsync -a rootfs-integration/firmware/ rootfs/lib/firmware/
+            echo "Installed sagit verified firmware overrides (board-2.bin)"
+          fi
           ls rootfs/lib/firmware/ | head -20
           test -d rootfs/lib/firmware/ath10k/WCN3990 && echo "WCN3990 firmware present" || echo "WARN: WCN3990 firmware missing"
           ls rootfs/lib/firmware/qcom/ 2>/dev/null || true

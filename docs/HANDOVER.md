@@ -25,12 +25,15 @@
 
 ## 二、阶段性已解决攻坚重点 (Accomplishments)
 
-### 1. Wi-Fi 驱动底层攻坚与防掉线
+### 1. Wi-Fi 驱动底层攻坚与高速防掉线
 - **四大驱动补丁注入**：
   - `0009-ath10k-recover-on-rx-failure.patch`: 硬件驱动错误时平滑自愈。
   - `0010-ath10k-persist-split-amsdu.patch`: 80MHz 信道 A-MSDU 大包重组缓冲支持。
   - `0011-ath10k-readonly-split-rx-counters.patch`: 避免统计计数器引发空指针异常。
   - `0012-ath10k-wcn3990-pmf-peer-flag.patch`: 修复 PMF 管理帧保护握手缺陷。
+- **射频校准库（board-2.bin）完美匹配（根除 PC=b00b9058 崩溃）**：
+  - 根除通用 Alpine 固件包中伪造 `board-id=0` 回退项导致的 `crc32 00000000` 假校准与 `failed to set txpower: -108`。
+  - 部署来自 GitHub 社区（dsankouski / degdag）的 sagit 真实校准库（SHA256: `44c2f932c0...`），严格映射小米 6 原厂基带分区 `bdwlan.*`，50MB+ 满速高并发压测零崩溃。
 - **全链路 MAC 永久固化**：彻底告别每次重启 MAC 随机漂移的问题，绑定唯一硬件出厂地址。
 
 ### 2. 高通 Hexagon 看门狗 19 秒崩溃死循环根除 (P0 彻底闭环)
