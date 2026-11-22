@@ -81,10 +81,13 @@ jobs:
           if [ -f rootfs-integration/systemd/10-fast-reboot.conf ]; then
             sudo cp rootfs-integration/systemd/10-fast-reboot.conf rootfs/etc/systemd/system.conf.d/
           fi
-          # locale setup (generate en_US.UTF-8)
+          # locale setup (generate en_US.UTF-8 and compile UTF-8 alias for macOS SSH clients)
           sudo sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' rootfs/etc/locale.gen || true
           sudo chroot rootfs locale-gen || true
-          sudo chroot rootfs update-locale LANG=en_US.UTF-8 || true
+          sudo chroot rootfs localedef -i en_US -f UTF-8 UTF-8 || true
+          sudo chroot rootfs update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 || true
+          sudo mkdir -p rootfs/etc/profile.d
+          sudo cp rootfs-integration/profile.d/00-locale.sh rootfs/etc/profile.d/ 2>/dev/null || true
           # users: root + mi6 (documented initial password, change after first login)
           sudo chroot rootfs /bin/bash -c "
             echo root:$INITIAL_PW | chpasswd
