@@ -69,23 +69,7 @@ jobs:
           fi
           # Guarantee Hexagon remoteprocs (Modem MSS, Sensors SLPI, Audio ADSP) are enabled in DTS
           if ! grep -q "&mss_pil" arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts; then
-            cat << 'EOF_DTS' >> arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
-
-&mss_pil {
-	firmware-name = "qcom/msm8998/xiaomi/mba.mbn", "qcom/msm8998/xiaomi/modem.mbn";
-	status = "okay";
-};
-
-&slpi_pas {
-	firmware-name = "qcom/msm8998/xiaomi/slpi_v2.mbn";
-	status = "okay";
-};
-
-&adsp_pas {
-	firmware-name = "qcom/msm8998/xiaomi/adsp.mbn";
-	status = "okay";
-};
-EOF_DTS
+            printf '\n&mss_pil {\n\tfirmware-name = "qcom/msm8998/xiaomi/mba.mbn", "qcom/msm8998/xiaomi/modem.mbn";\n\tstatus = "okay";\n};\n\n&slpi_pas {\n\tfirmware-name = "qcom/msm8998/xiaomi/slpi_v2.mbn";\n\tstatus = "okay";\n};\n\n&adsp_pas {\n\tfirmware-name = "qcom/msm8998/xiaomi/adsp.mbn";\n\tstatus = "okay";\n};\n' >> arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
           fi
 
       - name: Configure (sagit_defconfig + mi6.fragment)
