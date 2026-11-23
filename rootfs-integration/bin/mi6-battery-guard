@@ -1,24 +1,39 @@
 #!/bin/bash
 # Xiaomi Mi 6 Battery Protection Daemon
-# Prevents battery swelling and degradation by clamping charge between 70% and 80%.
+# Prevents lithium battery swelling and degradation under 24/7 server operation
+# by maintaining state-of-charge between START_THRESHOLD and STOP_THRESHOLD.
+
 STOP_THRESHOLD=${STOP_THRESHOLD:-80}
 START_THRESHOLD=${START_THRESHOLD:-70}
-CHARGER="/sys/class/power_supply/pmi8998_charger"
-BATTERY="/sys/class/power_supply/battery"
 
-logger -t mi6-battery-guard "Daemon started (Stop threshold: ${STOP_THRESHOLD}%, Resume threshold: ${START_THRESHOLD}%)"
+# Autodetect battery and charger paths
+BATTERY="/sys/class/power_supply/qcom-battery"
+[ ! -d "$BATTERY" ] && BATTERY="/sys/class/power_supply/battery"
+
+CHARGER="/sys/class/power_supply/pmi8998-charger"
+[ ! -d "$CHARGER" ] && CHARGER="/sys/class/power_supply/pmi8998_charger"
+
+# Ensure standard /sys/class/power_supply/battery symlink for userspace tools
+if [ -d "/sys/class/power_supply/qcom-battery" ] && [ ! -e "/sys/class/power_supply/battery" ]; then
+    ln -sf qcom-battery /sys/class/power_supply/battery 2>/dev/null || true
+fi
+
+logger -t mi6-battery-guard "Daemon started (Battery: $BATTERY, Charger: $CHARGER, Stop: ${STOP_THRESHOLD}%, Resume: ${START_THRESHOLD}%)"
 
 while true; do
     if [ -f "$BATTERY/capacity" ] && [ -d "$CHARGER" ]; then
         CAP=$(cat "$BATTERY/capacity" 2>/dev/null || echo 0)
         STATUS=$(cat "$BATTERY/status" 2>/dev/null || echo "Unknown")
+        VOLT=$(cat "$BATTERY/voltage_now" 2>/dev/null || echo 0)
+        CURR=$(cat "$BATTERY/current_now" 2>/dev/null || echo 0)
+        TEMP=$(cat "$BATTERY/temp" 2>/dev/null || echo 0)
 
         if [ "$CAP" -ge "$STOP_THRESHOLD" ] && [ "$STATUS" = "Charging" ]; then
-            echo 0 > "$CHARGER/status" 2>/dev/null || true
-            logger -t mi6-battery-guard "Battery at ${CAP}% >= ${STOP_THRESHOLD}%, charging suspended"
+            echo 0 > "$CHARGER/online" 2>/dev/null || echo 0 > "$CHARGER/status" 2>/dev/null || true
+            logger -t mi6-battery-guard "[CLAMPED] Battery at ${CAP}% >= ${STOP_THRESHOLD}%. Charging suspended. (V=${VOLT}uV, I=${CURR}uA, T=${TEMP}mC)"
         elif [ "$CAP" -le "$START_THRESHOLD" ]; then
-            echo 1 > "$CHARGER/status" 2>/dev/null || true
-            logger -t mi6-battery-guard "Battery at ${CAP}% <= ${START_THRESHOLD}%, charging resumed"
+            echo 1 > "$CHARGER/online" 2>/dev/null || echo 1 > "$CHARGER/status" 2>/dev/null || true
+            logger -t mi6-battery-guard "[RESUMED] Battery at ${CAP}% <= ${START_THRESHOLD}%. Charging resumed. (V=${VOLT}uV, I=${CURR}uA, T=${TEMP}mC)"
         fi
     fi
     sleep 30

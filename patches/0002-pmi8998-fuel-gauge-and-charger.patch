@@ -16,7 +16,7 @@ diff --git a/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts b/arch/arm64/boot
 index 09dd8fe..cabf055 100644
 --- a/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
 +++ b/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
-@@ -909,3 +909,39 @@
+@@ -909,3 +909,57 @@
  &apc_cprh {
  	status = "okay";
  };
@@ -55,6 +55,21 @@ index 09dd8fe..cabf055 100644
 +		constant-charge-current-max-microamp = <3200000>;
 +		charge-full-design-microamp-hours = <3350000>;
 +	};
++};
++
++&remoteproc_mss {
++	firmware-name = "qcom/msm8998/xiaomi/mba.mbn", "qcom/msm8998/xiaomi/modem.mbn";
++	status = "okay";
++};
++
++&remoteproc_slpi {
++	firmware-name = "qcom/msm8998/xiaomi/slpi_v2.mbn";
++	status = "okay";
++};
++
++&remoteproc_adsp {
++	firmware-name = "qcom/msm8998/xiaomi/adsp.mbn";
++	status = "okay";
 +};
 diff --git a/drivers/power/supply/Kconfig b/drivers/power/supply/Kconfig
 index b89ef40..a42d023 100644
