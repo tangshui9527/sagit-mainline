@@ -89,10 +89,10 @@ index f3c0d10..e805243 100644
  obj-$(CONFIG_CHARGER_MAX77759)	+= max77759_charger.o
 diff --git a/drivers/power/supply/qcom_fg.c b/drivers/power/supply/qcom_fg.c
 new file mode 100644
-index 0000000..6bfffa9
+index 0000000..1111111
 --- /dev/null
 +++ b/drivers/power/supply/qcom_fg.c
-@@ -0,0 +1,1366 @@
+@@ -0,0 +1,1369 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/* Copyright (c) 2020, The Linux Foundation. All rights reserved. */
 +
@@ -106,6 +106,7 @@ index 0000000..6bfffa9
 +#include <linux/of_irq.h>
 +#include <linux/platform_device.h>
 +#include <linux/power_supply.h>
++#include <linux/property.h>
 +#include <linux/regmap.h>
 +#include <linux/types.h>
 +#include <linux/workqueue.h>
@@ -1158,7 +1159,7 @@ index 0000000..6bfffa9
 +	return 0;
 +}
 +
-+irqreturn_t qcom_fg_handle_soc_delta(int irq, void *data)
++static irqreturn_t qcom_fg_handle_soc_delta(int irq, void *data)
 +{
 +	struct qcom_fg_chip *chip = data;
 +
@@ -1169,7 +1170,7 @@ index 0000000..6bfffa9
 +	return IRQ_HANDLED;
 +}
 +
-+irqreturn_t qcom_fg_handle_mem_avail(int irq, void *data)
++static irqreturn_t qcom_fg_handle_mem_avail(int irq, void *data)
 +{
 +	struct qcom_fg_chip *chip = data;
 +
@@ -1296,7 +1297,7 @@ index 0000000..6bfffa9
 +	}
 +
 +	supply_config.drv_data = chip;
-+	supply_config.of_node = pdev->dev.of_node;
++	supply_config.fwnode = dev_fwnode(&pdev->dev);
 +
 +	chip->batt_psy = devm_power_supply_register(chip->dev,
 +			&batt_psy_desc, &supply_config);
@@ -1399,14 +1400,12 @@ index 0000000..6bfffa9
 +	}
 +
 +	/* Optional: Get charger power supply for status checking */
-+	chip->chg_psy = power_supply_get_by_phandle(chip->dev->of_node,
-+							"power-supplies");
-+	if (IS_ERR(chip->chg_psy)) {
-+		ret = PTR_ERR(chip->chg_psy);
-+		dev_warn(chip->dev, "Failed to get charger supply: %d\n", ret);
++	/* Optional: Get charger power supply for status checking */
++	chip->chg_psy = power_supply_get_by_name("pmi8998_charger");
++	if (IS_ERR_OR_NULL(chip->chg_psy)) {
++		dev_dbg(chip->dev, "Charger supply not available\n");
 +		chip->chg_psy = NULL;
 +	}
-+
 +	if (chip->chg_psy) {
 +		INIT_DELAYED_WORK(&chip->status_changed_work,
 +			qcom_fg_status_changed_worker);
@@ -1427,6 +1426,10 @@ index 0000000..6bfffa9
 +{
 +	struct qcom_fg_chip *chip = platform_get_drvdata(pdev);
 +
++	if (chip->chg_psy) {
++		power_supply_unreg_notifier(&chip->nb);
++		power_supply_put(chip->chg_psy);
++	}
 +	power_supply_put_battery_info(chip->batt_psy, chip->batt_info);
 +
 +	if(chip->sram_wq)
@@ -1459,6 +1462,3 @@ index 0000000..6bfffa9
 +MODULE_AUTHOR("Yassine Oudjana <y.oudjana@protonmail.com>");
 +MODULE_DESCRIPTION("Qualcomm PMIC Fuel Gauge Driver");
 +MODULE_LICENSE("GPL v2");
--- 
-2.56.0
-
