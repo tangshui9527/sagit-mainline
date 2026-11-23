@@ -1,76 +1,15 @@
 From 18638c6225d7b85623b9efa18321bcbbe9450abf Mon Sep 17 00:00:00 2001
 From: tangshui9527 <tangshui1122@gmail.com>
 Date: Mon, 23 Nov 2026 14:21:05 +0800
-Subject: [PATCH] power: supply: add Qualcomm PMI8998 fuel gauge driver and
- sagit battery DT nodes
+Subject: [PATCH] power: supply: add Qualcomm PMI8998 fuel gauge driver
 
 ---
- .../boot/dts/qcom/msm8998-xiaomi-sagit.dts    |   36 +
  drivers/power/supply/Kconfig                  |    8 +
  drivers/power/supply/Makefile                 |    1 +
  drivers/power/supply/qcom_fg.c                | 1366 +++++++++++++++++
- 4 files changed, 1411 insertions(+)
+ 3 files changed, 1375 insertions(+)
  create mode 100644 drivers/power/supply/qcom_fg.c
 
-diff --git a/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts b/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
-index 09dd8fe..cabf055 100644
---- a/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
-+++ b/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
-@@ -909,3 +909,57 @@
- &apc_cprh {
- 	status = "okay";
- };
-+
-+&pmi8998_charger {
-+	monitored-battery = <&battery>;
-+	status = "okay";
-+};
-+
-+&pmi8998_rradc {
-+	status = "okay";
-+};
-+
-+&pmi8998_lsid0 {
-+	pmi8998_fg: fuel-gauge@4000 {
-+		compatible = "qcom,pmi8998-fg";
-+		reg = <0x4000 0x1000>;
-+		interrupts = <0x02 0x40 0x03 0x01>,
-+			     <0x02 0x13 0x04 0x03>;
-+		interrupt-names = "soc-delta", "usb-plugin";
-+		monitored-battery = <&battery>;
-+		status = "okay";
-+		qcom,max-voltage-uv = <4400000>;
-+		qcom,min-voltage-uv = <3700000>;
-+		charge-full-design-microamp-hours = <3350000>;
-+	};
-+};
-+
-+/ {
-+	battery: battery {
-+		compatible = "simple-battery";
-+		device-chemistry = "lithium-ion";
-+		voltage-max-design-microvolt = <4400000>;
-+		voltage-min-design-microvolt = <3700000>;
-+		constant-charge-voltage-max-microvolt = <4400000>;
-+		constant-charge-current-max-microamp = <3200000>;
-+		charge-full-design-microamp-hours = <3350000>;
-+	};
-+};
-+
-+&remoteproc_mss {
-+	firmware-name = "qcom/msm8998/xiaomi/mba.mbn", "qcom/msm8998/xiaomi/modem.mbn";
-+	status = "okay";
-+};
-+
-+&remoteproc_slpi {
-+	firmware-name = "qcom/msm8998/xiaomi/slpi_v2.mbn";
-+	status = "okay";
-+};
-+
-+&remoteproc_adsp {
-+	firmware-name = "qcom/msm8998/xiaomi/adsp.mbn";
-+	status = "okay";
-+};
 diff --git a/drivers/power/supply/Kconfig b/drivers/power/supply/Kconfig
 index b89ef40..a42d023 100644
 --- a/drivers/power/supply/Kconfig

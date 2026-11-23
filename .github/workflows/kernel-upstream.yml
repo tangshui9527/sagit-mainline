@@ -5,7 +5,9 @@ on:
     paths:
       - '.github/workflows/kernel-upstream.yml'
       - 'configs/**'
+      - 'dts/**'
       - 'patches/**'
+      - 'rootfs-integration/**'
   workflow_dispatch:
     inputs:
       tag:
@@ -54,9 +56,6 @@ jobs:
           git fetch -q --filter=blob:none https://github.com/gregkh/linux refs/tags/v7.2.11:refs/tags/v7.2.11 || true
           cd ../kernel
           IL=$(cd ../ilertnost && git rev-parse HEAD)
-          # wholesale dts replacement (their coherent sagit dts state)
-          cp ../ilertnost/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts \
-             arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
           # cherry-pick non-dts device driver fixes (cpufreq/clk/ath10k/drm/sound),
           # tolerating conflicts (report and skip)
           for C in $(git -C ../ilertnost log --format='%h' --no-patch \
@@ -69,6 +68,16 @@ jobs:
             fi
           done
           git log --oneline -15 | head -15
+
+          # Install comprehensive sagit DTS AFTER cherry-picks so it is never reverted by git reset --hard
+          if [ -f ../dts/msm8998-xiaomi-sagit.dts ]; then
+            echo "Installing comprehensive sagit DTS (GPU, MDSS, battery, remoteprocs)..."
+            cp ../dts/msm8998-xiaomi-sagit.dts arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
+          else
+            echo "Fallback: copying ilertnost DTS..."
+            cp ../ilertnost/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts \
+               arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
+          fi
 
           # Apply sagit device tree and kernel patches AFTER cherry-picks so they are not reverted by git reset --hard
           for P in ../patches/*.patch; do

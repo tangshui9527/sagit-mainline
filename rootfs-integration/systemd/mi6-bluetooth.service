@@ -1,0 +1,12 @@
+[Unit]
+Description=Initialize Xiaomi Mi 6 Bluetooth MAC and Controller
+Before=bluetooth.service
+After=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mi6-init-bt.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=bluetooth.target multi-user.target
