@@ -1,13 +1,95 @@
-From: Antigravity Agent <antigravity@google.com>
-Subject: [PATCH] power: supply: add Qualcomm PMI8998 fuel gauge driver and sagit battery DT nodes
+From 2591d1ee8ff2c20a5c451c7826898a400424817f Mon Sep 17 00:00:00 2001
+From: tangshui9527 <tangshui1122@gmail.com>
+Date: Mon, 23 Nov 2026 13:12:06 +0800
+Subject: [PATCH] power: supply: add Qualcomm PMI8998 fuel gauge driver and
+ sagit battery DT nodes
 
-Add qcom_fg driver for Qualcomm PMI8998 Gen3 Fuel Gauge hardware,
-enable qcom_smbx charger and rradc in sagit DTS, and define
-simple-battery parameters (3350mAh / 4.4V).
-
-Signed-off-by: Antigravity Agent <antigravity@google.com>
 ---
+ .../boot/dts/qcom/msm8998-xiaomi-sagit.dts    |   36 +
+ drivers/power/supply/Kconfig                  |    8 +
+ drivers/power/supply/Makefile                 |    1 +
+ drivers/power/supply/qcom_fg.c                | 1366 +++++++++++++++++
+ 4 files changed, 1411 insertions(+)
+ create mode 100644 drivers/power/supply/qcom_fg.c
 
+diff --git a/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts b/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
+index 09dd8fe..cabf055 100644
+--- a/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
++++ b/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
+@@ -909,3 +909,39 @@
+ &apc_cprh {
+ 	status = "okay";
+ };
++
++&pmi8998_charger {
++	monitored-battery = <&battery>;
++	status = "okay";
++};
++
++&pmi8998_rradc {
++	status = "okay";
++};
++
++&pmi8998_lsid0 {
++	pmi8998_fg: fuel-gauge@4000 {
++		compatible = "qcom,pmi8998-fg";
++		reg = <0x4000 0x1000>;
++		interrupts = <0x02 0x40 0x03 0x01>,
++			     <0x02 0x13 0x04 0x03>;
++		interrupt-names = "soc-delta", "usb-plugin";
++		monitored-battery = <&battery>;
++		status = "okay";
++		qcom,max-voltage-uv = <4400000>;
++		qcom,min-voltage-uv = <3700000>;
++		charge-full-design-microamp-hours = <3350000>;
++	};
++};
++
++/ {
++	battery: battery {
++		compatible = "simple-battery";
++		device-chemistry = "lithium-ion";
++		voltage-max-design-microvolt = <4400000>;
++		voltage-min-design-microvolt = <3700000>;
++		constant-charge-voltage-max-microvolt = <4400000>;
++		constant-charge-current-max-microamp = <3200000>;
++		charge-full-design-microamp-hours = <3350000>;
++	};
++};
+diff --git a/drivers/power/supply/Kconfig b/drivers/power/supply/Kconfig
+index b89ef40..a42d023 100644
+--- a/drivers/power/supply/Kconfig
++++ b/drivers/power/supply/Kconfig
+@@ -1181,6 +1181,14 @@ config CHARGER_QCOM_SMB2
+ 	  adds support for the SMB2 switch mode battery charger found
+ 	  in PMI8998 and related PMICs.
+ 
++config BATTERY_QCOM_FG
++	tristate "Qualcomm PMIC fuel gauge driver"
++	depends on MFD_SPMI_PMIC
++	help
++	  Say Y here to enable the Qualcomm PMIC Fuel Gauge driver. This
++	  adds support for battery fuel gauging and state of charge of
++	  battery connected to the fuel gauge.
++
+ config FUEL_GAUGE_MM8013
+ 	tristate "Mitsumi MM8013 fuel gauge driver"
+ 	depends on I2C
+diff --git a/drivers/power/supply/Makefile b/drivers/power/supply/Makefile
+index f3c0d10..e805243 100644
+--- a/drivers/power/supply/Makefile
++++ b/drivers/power/supply/Makefile
+@@ -132,6 +132,7 @@ obj-$(CONFIG_CHARGER_SURFACE)	+= surface_charger.o
+ obj-$(CONFIG_BATTERY_CHARGER_SURFACE_RT) += surface-rt-ec.o
+ obj-$(CONFIG_BATTERY_UG3105)	+= ug3105_battery.o
+ obj-$(CONFIG_CHARGER_QCOM_SMB2)	+= qcom_smbx.o
++obj-$(CONFIG_BATTERY_QCOM_FG)	+= qcom_fg.o
+ obj-$(CONFIG_FUEL_GAUGE_MM8013)	+= mm8013.o
+ obj-$(CONFIG_MACSMC_POWER)	+= macsmc-power.o
+ obj-$(CONFIG_CHARGER_MAX77759)	+= max77759_charger.o
+diff --git a/drivers/power/supply/qcom_fg.c b/drivers/power/supply/qcom_fg.c
+new file mode 100644
+index 0000000..6bfffa9
 --- /dev/null
 +++ b/drivers/power/supply/qcom_fg.c
 @@ -0,0 +1,1366 @@
@@ -1377,60 +1459,6 @@ Signed-off-by: Antigravity Agent <antigravity@google.com>
 +MODULE_AUTHOR("Yassine Oudjana <y.oudjana@protonmail.com>");
 +MODULE_DESCRIPTION("Qualcomm PMIC Fuel Gauge Driver");
 +MODULE_LICENSE("GPL v2");
+-- 
+2.56.0
 
---- a/drivers/power/supply/Makefile
-+++ b/drivers/power/supply/Makefile
-@@ -134,0 +135,1 @@
-+obj-$(CONFIG_BATTERY_QCOM_FG)	+= qcom_fg.o
-
---- a/drivers/power/supply/Kconfig
-+++ b/drivers/power/supply/Kconfig
-@@ -1185,0 +1186,8 @@
-+config BATTERY_QCOM_FG
-+	tristate "Qualcomm PMIC fuel gauge driver"
-+	depends on MFD_SPMI_PMIC
-+	help
-+	  Say Y here to enable the Qualcomm PMIC Fuel Gauge driver. This
-+	  adds support for battery fuel gauging and state of charge of
-+	  battery connected to the fuel gauge.
-+
-
---- a/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
-+++ b/arch/arm64/boot/dts/qcom/msm8998-xiaomi-sagit.dts
-@@ -920,0 +921,36 @@
-+
-+&pmi8998_charger {
-+	monitored-battery = <&battery>;
-+	status = "okay";
-+};
-+
-+&pmi8998_rradc {
-+	status = "okay";
-+};
-+
-+&pmi8998_lsid0 {
-+	pmi8998_fg: fuel-gauge@4000 {
-+		compatible = "qcom,pmi8998-fg";
-+		reg = <0x4000 0x1000>;
-+		interrupts = <0x02 0x40 0x03 0x01>,
-+			     <0x02 0x13 0x04 0x03>;
-+		interrupt-names = "soc-delta", "usb-plugin";
-+		monitored-battery = <&battery>;
-+		status = "okay";
-+		qcom,max-voltage-uv = <4400000>;
-+		qcom,min-voltage-uv = <3700000>;
-+		qcom,battery-capacity-ua = <3350000>;
-+	};
-+};
-+
-+/ {
-+	battery: battery {
-+		compatible = "simple-battery";
-+		device-chemistry = "lithium-ion";
-+		voltage-max-design-microvolt = <4400000>;
-+		voltage-min-design-microvolt = <3700000>;
-+		constant-charge-voltage-max-microvolt = <4400000>;
-+		constant-charge-current-max-microamp = <3200000>;
-+		charge-full-design-microamp-hours = <3350000>;
-+	};
-+};

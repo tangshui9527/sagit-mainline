@@ -74,7 +74,7 @@ jobs:
           for P in ../patches/*.patch; do
             if [ -f "$P" ]; then
               echo "Applying $P..."
-              patch -p1 < "$P" || echo "WARN: failed to apply $P"
+              git apply "$P" || patch -p1 < "$P" || echo "WARN: failed to apply $P"
             fi
           done
           # Guarantee Hexagon remoteprocs (Modem MSS, Sensors SLPI, Audio ADSP) are enabled in DTS
