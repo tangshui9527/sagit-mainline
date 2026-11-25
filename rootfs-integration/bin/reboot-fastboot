@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+sync
+# qcom-pon writes mode-bootloader (0x2) to PM8998 PON_SOFT_RB_SPARE on RESTART2("bootloader")
+if command -v systemctl >/dev/null 2>&1; then
+    exec systemctl reboot --reboot-argument=bootloader
+fi
+exec python3 -c 'import ctypes; ctypes.CDLL(None).syscall(142, 0xfee1dead, 672274793, 0xa1b2c3d4, b"bootloader\x00")'

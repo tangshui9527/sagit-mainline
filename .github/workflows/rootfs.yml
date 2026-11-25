@@ -123,23 +123,38 @@ jobs:
             sudo cp rootfs-integration/systemd/journald-size-limit.conf rootfs/etc/systemd/journald.conf.d/
           fi
           # mi6 services + scripts
+          sudo mkdir -p rootfs/usr/local/bin rootfs/usr/local/sbin
           sudo cp rootfs-integration/sbin/mi6-usb-gadget   rootfs/usr/local/sbin/
           sudo cp rootfs-integration/sbin/mi6-grow-rootfs  rootfs/usr/local/sbin/
+          for f in mi6-battery-guard mi6-init-bt.sh reboot-fastboot reboot-recovery; do
+            if [ -f "rootfs-integration/bin/$f" ]; then
+              sudo cp "rootfs-integration/bin/$f" rootfs/usr/local/bin/
+              sudo chmod 755 "rootfs/usr/local/bin/$f"
+            fi
+          done
+          if [ -f rootfs/usr/local/bin/reboot-fastboot ]; then
+            sudo ln -sf reboot-fastboot rootfs/usr/local/bin/reboot-bootloader
+            sudo ln -sf reboot-fastboot rootfs/usr/local/bin/fastboot
+          fi
           if [ -f rootfs-integration/bin/diag-router ]; then
             sudo cp rootfs-integration/bin/diag-router rootfs/usr/bin/
             sudo chmod 755 rootfs/usr/bin/diag-router
           fi
           sudo chmod 755 rootfs/usr/local/sbin/mi6-usb-gadget rootfs/usr/local/sbin/mi6-grow-rootfs
-          sudo mkdir -p rootfs/etc/systemd/system/multi-user.target.wants
+          sudo mkdir -p rootfs/etc/systemd/system/multi-user.target.wants rootfs/etc/systemd/system/bluetooth.target.wants
           sudo cp rootfs-integration/systemd/mi6-usb-gadget.service  rootfs/etc/systemd/system/
           sudo cp rootfs-integration/systemd/mi6-grow-rootfs.service rootfs/etc/systemd/system/
+          if [ -f rootfs-integration/systemd/mi6-battery-guard.service ]; then
+            sudo cp rootfs-integration/systemd/mi6-battery-guard.service rootfs/etc/systemd/system/
+            sudo ln -sf /etc/systemd/system/mi6-battery-guard.service rootfs/etc/systemd/system/multi-user.target.wants/mi6-battery-guard.service
+          fi
+          if [ -f rootfs-integration/systemd/mi6-bluetooth.service ]; then
+            sudo cp rootfs-integration/systemd/mi6-bluetooth.service rootfs/etc/systemd/system/
+            sudo ln -sf /etc/systemd/system/mi6-bluetooth.service rootfs/etc/systemd/system/bluetooth.target.wants/mi6-bluetooth.service
+          fi
           if [ -f rootfs-integration/systemd/diag-router.service ]; then
             sudo cp rootfs-integration/systemd/diag-router.service rootfs/etc/systemd/system/
             sudo ln -sf /etc/systemd/system/diag-router.service rootfs/etc/systemd/system/multi-user.target.wants/diag-router.service
-          fi
-          if [ -f rootfs-integration/systemd/sagit-console.service ]; then
-            sudo cp rootfs-integration/systemd/sagit-console.service rootfs/etc/systemd/system/
-            sudo ln -sf /etc/systemd/system/sagit-console.service rootfs/etc/systemd/system/multi-user.target.wants/sagit-console.service
           fi
           if [ -f rootfs-integration/systemd/remoteproc-mss.service ]; then
             sudo cp rootfs-integration/systemd/remoteproc-mss.service rootfs/etc/systemd/system/
@@ -236,7 +251,7 @@ jobs:
             --second_offset 0xf00000 \
             --tags_offset 0x100 \
             --board sagit \
-            --cmdline "clk_ignore_unused console=tty1 panic=10" \
+            --cmdline "clk_ignore_unused console=tty1 msm.separate_gpu_kms=1 panic=10" \
             --output boot-rescue2.img
           python3 - <<'PYEOF'
           import struct
@@ -369,7 +384,7 @@ jobs:
             --second_offset 0xf00000 \
             --tags_offset 0x100 \
             --board sagit \
-            --cmdline "clk_ignore_unused root=UUID=$ROOT_UUID rw rootwait loglevel=7" \
+            --cmdline "clk_ignore_unused console=tty1 msm.separate_gpu_kms=1 root=UUID=$ROOT_UUID rw rootwait loglevel=7" \
             --output boot-debian.img
           python3 - <<'PYEOF'
           import struct

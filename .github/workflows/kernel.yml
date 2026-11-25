@@ -141,7 +141,7 @@ jobs:
             --second_offset 0xf00000 \
             --tags_offset 0x100 \
             --board sagit \
-            --cmdline "clk_ignore_unused console=tty1" \
+            --cmdline "clk_ignore_unused console=tty1 msm.separate_gpu_kms=1" \
             --output boot.img
           # new AOSP mkbootimg zeroes second_addr when --second is absent;
           # patch it to 0xf00000 so the header is field-for-field identical

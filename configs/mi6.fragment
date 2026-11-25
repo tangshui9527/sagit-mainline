@@ -132,10 +132,12 @@ CONFIG_POWER_RESET_QCOM_PON=y
 CONFIG_POWER_RESET_MSM=y
 CONFIG_REGULATOR_QCOM_LABIBB=y
 
-# GPU 与显示核心时钟与驱动 (内置以保证早期 arm-smmu 与 GPU GDSC 正常探测)
+# GPU 与显示核心时钟与驱动 (GPUCC/MMCC 内置；msm 保持模块化以配合 rootfs 固件与 modprobe.d 参数)
 CONFIG_MSM_GPUCC_8998=y
 CONFIG_MSM_MMCC_8998=y
-CONFIG_DRM_MSM=y
+CONFIG_DRM_MSM=m
 CONFIG_DRM_MSM_GPU_STATE=y
 CONFIG_DRM_PANEL_JDI_FHD_R63452=y
-CONFIG_U_SERIAL_CONSOLE=y
+# 禁用 u_serial 内核 printk 控制台以避免 RCU/workqueue 死锁；/dev/ttyGS0 由 g_serial + serial-getty 提供
+# CONFIG_U_SERIAL_CONSOLE is not set
+CONFIG_USB_G_SERIAL=y

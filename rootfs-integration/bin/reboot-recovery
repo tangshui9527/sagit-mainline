@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+M=$(ls /dev/block/bootdevice/by-name/misc 2>/dev/null || ls /dev/sda9 2>/dev/null || true)
+if [ -n "$M" ]; then
+    printf "boot-recovery\0" | dd of="$M" bs=1 count=14 conv=notrunc 2>/dev/null || true
+fi
+sync
+if command -v systemctl >/dev/null 2>&1; then
+    exec systemctl reboot --reboot-argument=recovery
+fi
+exec python3 -c 'import ctypes; ctypes.CDLL(None).syscall(142, 0xfee1dead, 672274793, 0xa1b2c3d4, b"recovery\x00")'
