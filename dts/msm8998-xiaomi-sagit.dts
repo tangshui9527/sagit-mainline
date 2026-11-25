@@ -3102,7 +3102,7 @@
 
 	memory@80000000 {
 		device_type = "memory";
-		reg = <0x00 0x80000000 0x00 0xfe4c0000>;
+		reg = <0x00 0x80000000 0x00 0x00000000>;
 	};
 
 	vph-pwr-regulator {
