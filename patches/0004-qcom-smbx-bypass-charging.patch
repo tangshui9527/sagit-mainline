@@ -1,0 +1,135 @@
+diff --git a/drivers/power/supply/qcom_smbx.c b/drivers/power/supply/qcom_smbx.c
+--- a/drivers/power/supply/qcom_smbx.c	2026-11-26 22:03:56
++++ b/drivers/power/supply/qcom_smbx.c	2026-11-26 22:03:56
+@@ -417,6 +417,8 @@
+ 	POWER_SUPPLY_PROP_HEALTH,
+ 	POWER_SUPPLY_PROP_ONLINE,
+ 	POWER_SUPPLY_PROP_USB_TYPE,
++	POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,
++	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX,
+ };
+ 
+ static int smb_get_prop_usb_online(struct smb_chip *chip, int *val)
+@@ -550,8 +552,82 @@
+ 
+ 	return regmap_write(chip->regmap, chip->base + USBIN_CURRENT_LIMIT_CFG,
+ 			    val_raw);
++}
++
++static int smb_get_charge_current_max(struct smb_chip *chip, int *val)
++{
++	unsigned int reg;
++	int rc;
++
++	rc = regmap_read(chip->regmap, chip->base + FAST_CHARGE_CURRENT_CFG, &reg);
++	if (rc < 0)
++		return rc;
++
++	*val = (reg & FAST_CHARGE_CURRENT_SETTING_MASK) * CURRENT_SCALE_FACTOR;
++	return 0;
++}
++
++static int smb_set_charge_current_max(struct smb_chip *chip, int val)
++{
++	int max_ua = 1000000;
++	int rc;
++
++	if (chip->batt_info && chip->batt_info->constant_charge_current_max_ua > 0)
++		max_ua = min_t(int, chip->batt_info->constant_charge_current_max_ua, 3200000);
++
++	if (val < 0 || val > max_ua)
++		return -EINVAL;
++
++	rc = regmap_update_bits(chip->regmap, chip->base + FAST_CHARGE_CURRENT_CFG,
++				FAST_CHARGE_CURRENT_SETTING_MASK,
++				val / CURRENT_SCALE_FACTOR);
++	if (!rc)
++		power_supply_changed(chip->chg_psy);
++
++	return rc;
++}
++
++static int smb_get_prop_charge_behaviour(struct smb_chip *chip, int *val)
++{
++	unsigned int reg;
++	int rc;
++
++	rc = regmap_read(chip->regmap, chip->base + CHARGING_ENABLE_CMD, &reg);
++	if (rc < 0)
++		return rc;
++
++	if (reg & CHARGING_ENABLE_CMD_BIT)
++		*val = POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO;
++	else
++		*val = POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE;
++
++	return 0;
+ }
+ 
++static int smb_set_prop_charge_behaviour(struct smb_chip *chip, int val)
++{
++	unsigned int cmd;
++	int rc;
++
++	switch (val) {
++	case POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO:
++		cmd = CHARGING_ENABLE_CMD_BIT;
++		break;
++	case POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE:
++		cmd = 0;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	rc = regmap_update_bits(chip->regmap, chip->base + CHARGING_ENABLE_CMD,
++				CHARGING_ENABLE_CMD_BIT, cmd);
++	if (!rc)
++		power_supply_changed(chip->chg_psy);
++
++	return rc;
++}
++
+ static void smb_status_change_work(struct work_struct *work)
+ {
+ 	unsigned int charger_type, current_ua;
+@@ -682,6 +758,10 @@
+ 		return smb_get_prop_health(chip, &val->intval);
+ 	case POWER_SUPPLY_PROP_USB_TYPE:
+ 		return smb_apsd_get_charger_type(chip, &val->intval);
++	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
++		return smb_get_prop_charge_behaviour(chip, &val->intval);
++	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX:
++		return smb_get_charge_current_max(chip, &val->intval);
+ 	default:
+ 		dev_err(chip->dev, "invalid property: %d\n", psp);
+ 		return -EINVAL;
+@@ -700,6 +780,10 @@
+ 					  USBIN_SUSPEND_BIT, !val->intval);
+ 	case POWER_SUPPLY_PROP_CURRENT_MAX:
+ 		return smb_set_current_limit(chip, val->intval);
++	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
++		return smb_set_prop_charge_behaviour(chip, val->intval);
++	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX:
++		return smb_set_charge_current_max(chip, val->intval);
+ 	default:
+ 		dev_err(chip->dev, "No setter for property: %d\n", psp);
+ 		return -EINVAL;
+@@ -712,6 +796,8 @@
+ 	switch (psp) {
+ 	case POWER_SUPPLY_PROP_STATUS:
+ 	case POWER_SUPPLY_PROP_CURRENT_MAX:
++	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
++	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX:
+ 		return 1;
+ 	default:
+ 		return 0;
+@@ -780,6 +866,8 @@
+ static const struct power_supply_desc smb_psy_desc = {
+ 	.name = "pmi8998_charger",
+ 	.type = POWER_SUPPLY_TYPE_USB,
++	.charge_behaviours = BIT(POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO) |
++			     BIT(POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE),
+ 	.usb_types = BIT(POWER_SUPPLY_USB_TYPE_SDP) |
+ 		     BIT(POWER_SUPPLY_USB_TYPE_CDP) |
+ 		     BIT(POWER_SUPPLY_USB_TYPE_DCP) |

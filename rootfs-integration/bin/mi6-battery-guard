@@ -1,7 +1,7 @@
 #!/bin/bash
-# Xiaomi Mi 6 Battery Protection Daemon
-# Prevents lithium battery swelling and degradation under 24/7 server operation
-# by maintaining state-of-charge between START_THRESHOLD and STOP_THRESHOLD.
+# Xiaomi Mi 6 Battery Protection & Bypass Charging Daemon
+# Uses true PMI8998 SMB2 bypass charging (charge_behaviour=inhibit-charge) when
+# available so USB powers VPH_PWR directly while battery remains idle.
 
 STOP_THRESHOLD=${STOP_THRESHOLD:-80}
 START_THRESHOLD=${START_THRESHOLD:-70}
@@ -23,17 +23,23 @@ logger -t mi6-battery-guard "Daemon started (Battery: $BATTERY, Charger: $CHARGE
 while true; do
     if [ -f "$BATTERY/capacity" ] && [ -d "$CHARGER" ]; then
         CAP=$(cat "$BATTERY/capacity" 2>/dev/null || echo 0)
-        STATUS=$(cat "$BATTERY/status" 2>/dev/null || echo "Unknown")
         VOLT=$(cat "$BATTERY/voltage_now" 2>/dev/null || echo 0)
         CURR=$(cat "$BATTERY/current_now" 2>/dev/null || echo 0)
         TEMP=$(cat "$BATTERY/temp" 2>/dev/null || echo 0)
 
-        if [ "$CAP" -ge "$STOP_THRESHOLD" ] && [ "$STATUS" = "Charging" ]; then
-            echo 0 > "$CHARGER/online" 2>/dev/null || echo 0 > "$CHARGER/status" 2>/dev/null || true
-            logger -t mi6-battery-guard "[CLAMPED] Battery at ${CAP}% >= ${STOP_THRESHOLD}%. Charging suspended. (V=${VOLT}uV, I=${CURR}uA, T=${TEMP}mC)"
-        elif [ "$CAP" -le "$START_THRESHOLD" ]; then
-            echo 1 > "$CHARGER/online" 2>/dev/null || echo 1 > "$CHARGER/status" 2>/dev/null || true
-            logger -t mi6-battery-guard "[RESUMED] Battery at ${CAP}% <= ${START_THRESHOLD}%. Charging resumed. (V=${VOLT}uV, I=${CURR}uA, T=${TEMP}mC)"
+        if [ -w "$CHARGER/charge_behaviour" ]; then
+            BEHAV=$(cat "$CHARGER/charge_behaviour" 2>/dev/null || echo "")
+            if [ "$CAP" -ge "$STOP_THRESHOLD" ]; then
+                if ! echo "$BEHAV" | grep -q '\[inhibit-charge\]'; then
+                    echo inhibit-charge > "$CHARGER/charge_behaviour" 2>/dev/null || true
+                    logger -t mi6-battery-guard "[BYPASS] Battery at ${CAP}% >= ${STOP_THRESHOLD}%. Entered bypass charging (inhibit-charge). (V=${VOLT}uV, I=${CURR}uA, T=${TEMP}mC)"
+                fi
+            elif [ "$CAP" -le "$START_THRESHOLD" ]; then
+                if echo "$BEHAV" | grep -q '\[inhibit-charge\]'; then
+                    echo auto > "$CHARGER/charge_behaviour" 2>/dev/null || true
+                    logger -t mi6-battery-guard "[RESUMED] Battery at ${CAP}% <= ${START_THRESHOLD}%. Resumed normal charging (auto). (V=${VOLT}uV, I=${CURR}uA, T=${TEMP}mC)"
+                fi
+            fi
         fi
     fi
     sleep 30
