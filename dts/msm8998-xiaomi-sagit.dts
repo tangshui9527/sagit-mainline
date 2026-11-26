@@ -210,15 +210,13 @@
 		regulator-boot-on;
 	};
 
-	clocks {
-		div1_mclk: divclk1 {
-			compatible = "gpio-gate-clock";
-			pinctrl-names = "default";
-			pinctrl-0 = <&audio_mclk_pin>;
-			clocks = <&rpmcc RPM_SMD_DIV_CLK1>;
-			#clock-cells = <0>;
-			enable-gpios = <&pm8998_gpios 13 GPIO_ACTIVE_HIGH>;
-		};
+	div1_mclk: divclk1 {
+		compatible = "gpio-gate-clock";
+		pinctrl-names = "default";
+		pinctrl-0 = <&audio_mclk_pin>;
+		clocks = <&rpmcc RPM_SMD_DIV_CLK1>;
+		#clock-cells = <0>;
+		enable-gpios = <&pm8998_gpios 13 GPIO_ACTIVE_HIGH>;
 	};
 
 	battery: battery {
@@ -1124,6 +1122,11 @@
 					#address-cells = <1>;
 					#size-cells = <0>;
 					#sound-dai-cells = <1>;
+
+					dai@22 {
+						reg = <QUATERNARY_MI2S_RX>;
+						qcom,sd-lines = <0>;
+					};
 				};
 			};
 
@@ -1138,6 +1141,18 @@
 					#size-cells = <0>;
 					#sound-dai-cells = <1>;
 					iommus = <&lpass_q6_smmu 1>;
+
+					dai@0 {
+						reg = <MSM_FRONTEND_DAI_MULTIMEDIA1>;
+					};
+
+					dai@1 {
+						reg = <MSM_FRONTEND_DAI_MULTIMEDIA2>;
+					};
+
+					dai@2 {
+						reg = <MSM_FRONTEND_DAI_MULTIMEDIA3>;
+					};
 				};
 			};
 
