@@ -1,0 +1,3 @@
+# UFS 2.1 LUNs on Qualcomm ufshcd-qcom skip VPD pages and default to WRITE SAME(16)
+# (opcode 0x93), which UFS firmware rejects (Sense 0x5 ASC=0x20). Force standard UNMAP.
+ACTION=="add|change", SUBSYSTEM=="scsi_disk", DRIVERS=="ufshcd-qcom", ATTR{thin_provisioning}=="1", ATTR{provisioning_mode}="unmap"

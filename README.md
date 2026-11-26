@@ -14,7 +14,7 @@
 | :--- | :---: | :--- | :--- |
 | **CPU / 调频** | ✅ **完全正常** | Kryo 280 (4x Gold + 4x Silver), `cpufreq` | 8 核并发调度正常，动态节能调频已启用 |
 | **内存管理** | ✅ **完全正常** | LK 动态保留内存动态映射 | 适配 6GB LPDDR4x，`memory@80000000` 零长度动态解析 |
-| **UFS 存储** | ✅ **完全正常** | `ufshcd-qcom` (UFS 2.1) | ext4 根分区，系统首次启动自动扩容 (`mi6-grow-rootfs`) |
+| **UFS 存储** | ✅ **完全正常** | `ufshcd-qcom` (UFS 2.1) | ext4 根分区，开机自动扩容 (`mi6-grow-rootfs`)，udev 强制 `unmap` TRIM |
 | **GPU / 显示** | ✅ **完全正常** | Freedreno Adreno 540 DRM/KMS | 启用 `msm.separate_gpu_kms=1`，支持无头 GPU 计算与渲染 |
 | **USB 复合设备** | ✅ **完全正常** | ConfigFS (NCM 网络 + CDC-ACM 串口) | NCM 固定网段 `172.16.42.1` + ACM 终端 `/dev/ttyGS0` (免密 root) |
 | **电池 / 充电 / 旁路** | ✅ **完全正常** | `pmi8998-charger` (`qcom_smbx`) + `qcom-battery` | 支持充放电、电量计、`charge_behaviour` 真旁路供电及 `70%–80%` 自动保护 (`mi6-battery-guard`) |
@@ -74,6 +74,7 @@
     ├── alsa/                   # asound.conf 及 UCM2 硬件音频配置文件
     ├── bin/                    # 实用脚本 (mi6-init-bt.sh, reboot-fastboot 等)
     ├── systemd/                # 自定义 systemd 服务 (mi6-bluetooth, mi6-battery-guard 等)
+    ├── udev/rules.d/           # UFS 存储 UNMAP TRIM 规则 (60-ufs-unmap.rules)
     └── NetworkManager/         # USB NCM 与 Wi-Fi 预设网络连接
 ```
 

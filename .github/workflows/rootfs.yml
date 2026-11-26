@@ -67,8 +67,11 @@ jobs:
           if [ -f rootfs-integration/NetworkManager/disable-powersave.conf ]; then
             sudo cp rootfs-integration/NetworkManager/disable-powersave.conf rootfs/etc/NetworkManager/conf.d/
           fi
-          # modprobe, modules-load.d, tmpfiles, and fast reboot limits
-          sudo mkdir -p rootfs/etc/modprobe.d rootfs/etc/modules-load.d rootfs/etc/tmpfiles.d rootfs/etc/systemd/system.conf.d
+          # modprobe, modules-load.d, tmpfiles, udev rules, and fast reboot limits
+          sudo mkdir -p rootfs/etc/modprobe.d rootfs/etc/modules-load.d rootfs/etc/tmpfiles.d rootfs/etc/udev/rules.d rootfs/etc/systemd/system.conf.d
+          if [ -d rootfs-integration/udev/rules.d ]; then
+            sudo cp -r rootfs-integration/udev/rules.d/* rootfs/etc/udev/rules.d/
+          fi
           if [ -d rootfs-integration/modules-load.d ]; then
             sudo cp -r rootfs-integration/modules-load.d/* rootfs/etc/modules-load.d/
           fi
