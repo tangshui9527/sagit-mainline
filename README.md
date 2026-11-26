@@ -17,7 +17,7 @@
 | **UFS 存储** | ✅ **完全正常** | `ufshcd-qcom` (UFS 2.1) | ext4 根分区，系统首次启动自动扩容 (`mi6-grow-rootfs`) |
 | **GPU / 显示** | ✅ **完全正常** | Freedreno Adreno 540 DRM/KMS | 启用 `msm.separate_gpu_kms=1`，支持无头 GPU 计算与渲染 |
 | **USB 复合设备** | ✅ **完全正常** | ConfigFS (NCM 网络 + CDC-ACM 串口) | NCM 固定网段 `172.16.42.1` + ACM 终端 `/dev/ttyGS0` (免密 root) |
-| **电池 / 充电** | ✅ **完全正常** | `pmi8998-charger` + `qcom-battery` | 充放电检测、电量百分比、后台守护 `mi6-battery-guard` |
+| **电池 / 充电 / 旁路** | ✅ **完全正常** | `pmi8998-charger` (`qcom_smbx`) + `qcom-battery` | 支持充放电、电量计、`charge_behaviour` 真旁路供电及 `70%–80%` 自动保护 (`mi6-battery-guard`) |
 | **无线局域网 (Wi-Fi)**| ✅ **完全正常** | `ath10k_snoc` (WCN3990) | 双频 2.4G/5G，板载定标 `board-2.bin`，防崩溃 AMSDU 补丁 |
 | **蓝牙 (Bluetooth)** | ✅ **完全正常** | `hci_uart` / `btqca` (WCN3990) | 固件按序安全加载，固化出厂 MAC，BlueZ 5.82 + BlueALSA |
 | **扬声器外放 (Audio)** | ✅ **完全正常** | ASoC (`sdm845-sndcard`) + NXP TFA9888 | QDSP6 AFE/ASM `QUAT_MI2S_RX` -> TFA9888 双 Smart PA 立体声 |
@@ -48,6 +48,11 @@
 - **免密物理串口**：USB CDC-ACM 设备自动绑定串口终端 `/dev/cu.usbmodem21201`，无网络状态下插入电脑即可获取 root shell。
 - **内置免按键安全重启**：在系统内提供 `/usr/local/bin/reboot-fastboot` 与 `reboot-recovery`，利用 Qualcomm PM8998 PON 软复位寄存器精确跳转，告别长按物理电源键与音量键。
 
+### 5. PMI8998 真·旁路供电与电池保护（Bypass Charging / Idle Mode）
+- **内核驱动扩展（`0004-qcom-smbx-bypass-charging.patch`）**：为上游 `qcom_smbx` 驱动新增主线标准的 `charge_behaviour`（`auto` / `inhibit-charge`）与可写 `constant_charge_current_max`（`0–3200000 uA`，`25 mA` 步进）节点。
+- **硬件真旁路原理**：切换为 `inhibit-charge` 时，驱动清零 SMB2 寄存器 `CHARGING_ENABLE_CMD`（`0x1042` bit 0）切断电池充电回路，同时保持 `USBIN` 通路开启（`online=1`），继续通过 Buck 直接为主板 `VPH_PWR` 供电；实测电池电流从充电状态降至约 `12–13 mA`（`Not charging`），实现真正意义上的不伤电池旁路运行。
+- **7×24 小时自动迟滞保护（`mi6-battery-guard`）**：系统守护进程默认在电量 `>= 80%` 时自动切换至 `inhibit-charge` 旁路供电，在电量 `<= 70%` 时自动恢复 `auto` 充电，避免长期插电导致锂电池鼓包衰减。
+
 ---
 
 ## 目录结构
@@ -61,9 +66,10 @@
 ├── dts/
 │   └── msm8998-xiaomi-sagit.dts # 完整定制的设备树文件 (音频、GPU、DSPs、电源)
 ├── patches/
-│   ├── 0001-ath10k-persist-split-amsdu.patch # Wi-Fi 稳定性补丁
-│   ├── 0002-pmi8998-fuel-gauge-and-charger.patch # 充电与电量检测补丁
-│   └── 0003-tfa9888-codec.patch              # NXP TFA9888 音频功放驱动补丁
+│   ├── 0001-ath10k-persist-split-amsdu.patch         # Wi-Fi 稳定性补丁
+│   ├── 0002-pmi8998-fuel-gauge-and-charger.patch    # 充电与电量检测补丁
+│   ├── 0003-tfa9888-codec.patch                     # NXP TFA9888 音频功放驱动补丁
+│   └── 0004-qcom-smbx-bypass-charging.patch         # PMI8998 SMB2 真旁路供电与限流补丁
 └── rootfs-integration/         # 注入 Debian 根文件系统的配置文件与守护脚本
     ├── alsa/                   # asound.conf 及 UCM2 硬件音频配置文件
     ├── bin/                    # 实用脚本 (mi6-init-bt.sh, reboot-fastboot 等)
@@ -117,7 +123,7 @@ fastboot reboot
 
 ---
 
-## 音频与蓝牙使用示例
+## 音频、蓝牙与旁路供电使用示例
 
 ### 1. 测试扬声器播放与麦克风录音
 系统已内置开机默认音频路由与音量校准，直接使用原生 ALSA 工具即可：
@@ -145,6 +151,27 @@ bluetoothctl
 [bluetoothctl]> connect <DEVICE_MAC>
 ```
 当手机配对成功后，在手机端播放任意音乐，音频流将自动通过 `bluealsa-aplay` 桥接并由米 6 双扬声器高保真输出。
+
+### 3. 查看与控制旁路供电
+系统默认由 `mi6-battery-guard` 按 `70%–80%` 自动切换旁路模式：
+```bash
+# 查看当前电量、旁路模式与实时电池电流 (uA)
+cat /sys/class/power_supply/qcom-battery/capacity
+cat /sys/class/power_supply/pmi8998-charger/charge_behaviour
+cat /sys/class/power_supply/pmi8998-charger/status
+cat /sys/class/power_supply/qcom-battery/current_now
+
+# 查看自动保护守护日志
+journalctl -u mi6-battery-guard -n 20 --no-pager
+
+# 手动强制启用旁路供电（需先停止自动守护进程，避免在 70% 以下被自动切回充电）
+systemctl stop mi6-battery-guard
+echo inhibit-charge > /sys/class/power_supply/pmi8998-charger/charge_behaviour
+
+# 恢复自动充电与守护
+echo auto > /sys/class/power_supply/pmi8998-charger/charge_behaviour
+systemctl start mi6-battery-guard
+```
 
 ---
 
