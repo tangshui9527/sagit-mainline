@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""
+Mi 6 Wi-Fi Fallback AP Watchdog.
+- Normal Mode: Automatically connects to known/saved Wi-Fi.
+- Fallback Mode: If no known Wi-Fi connects within timeout, starts Fallback AP (Mi6-Setup-AP)
+  and runs the captive web portal on 192.168.12.1.
+"""
+import subprocess
+import time
+import sys
+
+FALLBACK_CON = "Mi6-Fallback-AP"
+PORTAL_SERVICE = "mi6-wifi-portal.service"
+INITIAL_GRACE_PERIOD = 35  # seconds after boot before checking connection
+CHECK_INTERVAL = 15        # seconds between health checks
+DISCONNECT_THRESHOLD = 30  # seconds disconnected before falling back to AP
+
+def run_cmd(args):
+    try:
+        res = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
+        return res.returncode == 0, res.stdout.strip()
+    except Exception as e:
+        return False, str(e)
+
+def get_wifi_state():
+    ok, out = run_cmd(['nmcli', '-t', '-f', 'DEVICE,TYPE,STATE,CONNECTION', 'dev'])
+    if not ok:
+        return 'unknown', None
+    for line in out.splitlines():
+        parts = line.split(':')
+        if len(parts) >= 3 and parts[0] == 'wlan0':
+            state = parts[2]
+            con_name = parts[3] if len(parts) >= 4 else None
+            return state, con_name
+    return 'disconnected', None
+
+def is_portal_active():
+    ok, _ = run_cmd(['systemctl', 'is-active', '--quiet', PORTAL_SERVICE])
+    return ok
+
+def start_fallback_ap():
+    print("[Fallback] No saved Wi-Fi connected! Activating Fallback AP (Mi6-Setup-AP)...", flush=True)
+    run_cmd(['systemctl', 'start', PORTAL_SERVICE])
+    run_cmd(['nmcli', 'connection', 'up', FALLBACK_CON])
+
+def stop_fallback_ap():
+    print("[Fallback] Normal Wi-Fi restored. Stopping Fallback AP and portal...", flush=True)
+    run_cmd(['systemctl', 'stop', PORTAL_SERVICE])
+    run_cmd(['nmcli', 'connection', 'down', FALLBACK_CON])
+
+def main():
+    print(f"[Fallback] Starting Wi-Fi Fallback Watchdog (initial grace period {INITIAL_GRACE_PERIOD}s)...", flush=True)
+    time.sleep(INITIAL_GRACE_PERIOD)
+
+    disconnect_duration = 0
+
+    while True:
+        try:
+            state, con_name = get_wifi_state()
+
+            if state == 'connected':
+                if con_name == FALLBACK_CON:
+                    disconnect_duration = 0
+                else:
+                    disconnect_duration = 0
+                    if is_portal_active():
+                        stop_fallback_ap()
+            else:
+                disconnect_duration += CHECK_INTERVAL
+                print(f"[Fallback] Wi-Fi not connected (duration: {disconnect_duration}s/{DISCONNECT_THRESHOLD}s)", flush=True)
+                if disconnect_duration >= DISCONNECT_THRESHOLD:
+                    if con_name != FALLBACK_CON:
+                        start_fallback_ap()
+
+            time.sleep(CHECK_INTERVAL)
+        except Exception as e:
+            print(f"[Fallback] Watchdog error: {e}", file=sys.stderr, flush=True)
+            time.sleep(10)
+
+if __name__ == '__main__':
+    main()

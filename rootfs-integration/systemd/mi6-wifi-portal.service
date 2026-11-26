@@ -1,0 +1,12 @@
+[Unit]
+Description=Mi 6 Wi-Fi Setup Captive Web Portal
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mi6-wifi-portal
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

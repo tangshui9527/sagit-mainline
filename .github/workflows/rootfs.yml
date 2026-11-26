@@ -129,7 +129,7 @@ jobs:
           sudo mkdir -p rootfs/usr/local/bin rootfs/usr/local/sbin
           sudo cp rootfs-integration/sbin/mi6-usb-gadget   rootfs/usr/local/sbin/
           sudo cp rootfs-integration/sbin/mi6-grow-rootfs  rootfs/usr/local/sbin/
-          for f in mi6-battery-guard mi6-init-bt.sh reboot-fastboot reboot-recovery; do
+          for f in mi6-battery-guard mi6-init-bt.sh mi6-wifi-fallback mi6-wifi-portal reboot-fastboot reboot-recovery; do
             if [ -f "rootfs-integration/bin/$f" ]; then
               sudo cp "rootfs-integration/bin/$f" rootfs/usr/local/bin/
               sudo chmod 755 "rootfs/usr/local/bin/$f"
@@ -150,6 +150,28 @@ jobs:
           if [ -f rootfs-integration/systemd/mi6-battery-guard.service ]; then
             sudo cp rootfs-integration/systemd/mi6-battery-guard.service rootfs/etc/systemd/system/
             sudo ln -sf /etc/systemd/system/mi6-battery-guard.service rootfs/etc/systemd/system/multi-user.target.wants/mi6-battery-guard.service
+          fi
+          if [ -f rootfs-integration/systemd/mi6-wifi-fallback.service ]; then
+            sudo cp rootfs-integration/systemd/mi6-wifi-fallback.service rootfs/etc/systemd/system/
+            sudo cp rootfs-integration/systemd/mi6-wifi-portal.service rootfs/etc/systemd/system/
+            sudo ln -sf /etc/systemd/system/mi6-wifi-fallback.service rootfs/etc/systemd/system/multi-user.target.wants/mi6-wifi-fallback.service
+          fi
+          if [ -d rootfs-integration/NetworkManager/dnsmasq-shared.d ]; then
+            sudo mkdir -p rootfs/etc/NetworkManager/dnsmasq-shared.d
+            sudo cp -r rootfs-integration/NetworkManager/dnsmasq-shared.d/* rootfs/etc/NetworkManager/dnsmasq-shared.d/
+          fi
+          if [ -d rootfs-integration/nginx ]; then
+            sudo mkdir -p rootfs/etc/nginx/sites-available rootfs/etc/nginx/sites-enabled
+            sudo cp -r rootfs-integration/nginx/* rootfs/etc/nginx/sites-available/
+            sudo ln -sf /etc/nginx/sites-available/wifi-portal rootfs/etc/nginx/sites-enabled/wifi-portal 2>/dev/null || true
+          fi
+          if [ -d rootfs-integration/X11 ]; then
+            sudo mkdir -p rootfs/etc/X11/xorg.conf.d
+            sudo cp -r rootfs-integration/X11/xorg.conf.d/* rootfs/etc/X11/xorg.conf.d/
+          fi
+          if [ -d rootfs-integration/lightdm ]; then
+            sudo mkdir -p rootfs/etc/lightdm/lightdm.conf.d
+            sudo cp -r rootfs-integration/lightdm/lightdm.conf.d/* rootfs/etc/lightdm/lightdm.conf.d/
           fi
           if [ -f rootfs-integration/systemd/mi6-bluetooth.service ]; then
             sudo cp rootfs-integration/systemd/mi6-bluetooth.service rootfs/etc/systemd/system/

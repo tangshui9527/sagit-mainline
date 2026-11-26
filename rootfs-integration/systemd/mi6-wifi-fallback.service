@@ -1,0 +1,13 @@
+[Unit]
+Description=Mi 6 Automatic Wi-Fi Fallback AP Watchdog
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mi6-wifi-fallback
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

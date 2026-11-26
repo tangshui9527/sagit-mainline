@@ -1,0 +1,502 @@
+#!/usr/bin/env python3
+import http.server
+import socketserver
+import json
+import subprocess
+import threading
+import time
+import urllib.parse
+import os
+import sys
+
+PORT = 8088
+FALLBACK_AP = 'Mi6-Fallback-AP'
+
+HTML_TEMPLATE = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>小米 6 智能配网中心</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --success: #10b981;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --input-bg: #0f172a;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 16px;
+        }
+        .container {
+            width: 100%;
+            max-width: 440px;
+            background: var(--card-bg);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--border);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        .icon-badge {
+            width: 56px;
+            height: 56px;
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--primary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 12px;
+            font-size: 26px;
+        }
+        h1 {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 6px;
+        }
+        .subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+        .badge {
+            display: inline-block;
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--success);
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+        .section-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .refresh-btn {
+            background: none;
+            border: none;
+            color: var(--primary);
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px;
+        }
+        .wifi-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--input-bg);
+            margin-bottom: 18px;
+        }
+        .wifi-item {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .wifi-item:last-child { border-bottom: none; }
+        .wifi-item:hover, .wifi-item.selected {
+            background: rgba(59, 130, 246, 0.15);
+        }
+        .wifi-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 260px;
+        }
+        .wifi-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 6px;
+        }
+        .input-wrap {
+            position: relative;
+        }
+        input {
+            width: 100%;
+            padding: 12px 14px;
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+        }
+        .toggle-pwd {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px;
+        }
+        .submit-btn {
+            width: 100%;
+            padding: 14px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+        .submit-btn:hover { background: var(--primary-hover); }
+        .submit-btn:active { transform: scale(0.99); }
+        .submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .status-box {
+            display: none;
+            padding: 12px;
+            border-radius: 10px;
+            margin-top: 16px;
+            font-size: 13px;
+            line-height: 1.5;
+            text-align: center;
+        }
+        .status-box.loading {
+            display: block;
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--primary);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        .status-box.error {
+            display: block;
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        .status-box.success {
+            display: block;
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+        .footer {
+            margin-top: 20px;
+            text-align: center;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="icon-badge">📶</div>
+            <h1>小米 6 智能配网中心</h1>
+            <p class="subtitle">当前处于 Fallback 应急热点模式</p>
+            <span class="badge">已连接热点: Mi6-Setup-AP</span>
+        </div>
+
+        <div class="section-title">
+            <span>附近可用的 Wi-Fi</span>
+            <button class="refresh-btn" onclick="scanWifi()">🔄 刷新列表</button>
+        </div>
+
+        <div class="wifi-list" id="wifiList">
+            <div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px;">
+                正在扫描附近的无线网络...
+            </div>
+        </div>
+
+        <form id="connectForm" onsubmit="handleConnect(event)">
+            <div class="form-group">
+                <label for="ssidInput">Wi-Fi 名称 (SSID)</label>
+                <input type="text" id="ssidInput" placeholder="选择上方列表或手动输入" required autocomplete="off">
+            </div>
+
+            <div class="form-group">
+                <label for="passwordInput">Wi-Fi 密码</label>
+                <div class="input-wrap">
+                    <input type="password" id="passwordInput" placeholder="请输入无线密码 (无密码留空)">
+                    <button type="button" class="toggle-pwd" onclick="togglePassword()">👁️</button>
+                </div>
+            </div>
+
+            <button type="submit" class="submit-btn" id="submitBtn">保存并立即连接</button>
+        </form>
+
+        <div id="statusBox" class="status-box"></div>
+
+        <div class="footer">
+            Xiaomi Mi 6 (sagit) · Debian 13 ARM64 · Mainline Linux
+        </div>
+    </div>
+
+    <script>
+        function togglePassword() {
+            const input = document.getElementById('passwordInput');
+            input.type = input.type === 'password' ? 'text' : 'password';
+        }
+
+        async function scanWifi() {
+            const listEl = document.getElementById('wifiList');
+            listEl.innerHTML = '<div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px;">正在扫描附近的无线网络...</div>';
+            try {
+                const res = await fetch('/api/scan');
+                const networks = await res.json();
+                if (!networks || networks.length === 0) {
+                    listEl.innerHTML = '<div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px;">未搜索到周围的 Wi-Fi，请点击右上角刷新</div>';
+                    return;
+                }
+                listEl.innerHTML = '';
+                networks.forEach(net => {
+                    const item = document.createElement('div');
+                    item.className = 'wifi-item';
+                    const icon = net.signal > 70 ? '📶' : (net.signal > 40 ? '🛜' : '📡');
+                    const lock = net.security && !net.security.includes('--') ? '🔒' : '';
+                    item.innerHTML = `
+                        <span class="wifi-name">${escapeHtml(net.ssid)}</span>
+                        <div class="wifi-meta">
+                            <span>${lock}</span>
+                            <span>${net.signal}%</span>
+                            <span>${icon}</span>
+                        </div>
+                    `;
+                    item.onclick = () => selectWifi(net.ssid);
+                    listEl.appendChild(item);
+                });
+            } catch (err) {
+                listEl.innerHTML = '<div style="padding: 24px; text-align: center; color: #ef4444; font-size: 13px;">扫描失败，请重试</div>';
+            }
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/[&<>'"]/g, tag => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+            }[tag] || tag));
+        }
+
+        function selectWifi(ssid) {
+            document.getElementById('ssidInput').value = ssid;
+            document.querySelectorAll('.wifi-item').forEach(el => {
+                const name = el.querySelector('.wifi-name').innerText;
+                el.classList.toggle('selected', name === ssid);
+            });
+            document.getElementById('passwordInput').focus();
+        }
+
+        async function handleConnect(e) {
+            e.preventDefault();
+            const ssid = document.getElementById('ssidInput').value.trim();
+            const password = document.getElementById('passwordInput').value;
+            const btn = document.getElementById('submitBtn');
+            const statusBox = document.getElementById('statusBox');
+
+            if (!ssid) return;
+
+            btn.disabled = true;
+            btn.innerText = '正在配置连接...';
+            statusBox.className = 'status-box loading';
+            statusBox.innerHTML = `正在向小米 6 提交连接指令...<br>热点将在几秒后自动关闭，设备尝试接入 <b>${escapeHtml(ssid)}</b>。<br>如果连接成功，手机即可在路由器查看设备新 IP。`;
+
+            try {
+                const res = await fetch('/api/connect', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ ssid, password })
+                });
+                const data = await res.json();
+                statusBox.className = 'status-box success';
+                statusBox.innerHTML = `✅ <b>配置指令已提交！</b><br>${data.message || '热点已切换，请等待小米 6 连入路由器。'}`;
+            } catch (err) {
+                statusBox.className = 'status-box error';
+                statusBox.innerHTML = '❌ 提交失败，请检查手机是否仍连在热点上。';
+                btn.disabled = false;
+                btn.innerText = '保存并立即连接';
+            }
+        }
+
+        scanWifi();
+    </script>
+</body>
+</html>
+"""
+
+def do_wifi_scan():
+    try:
+        cmd = ['nmcli', '-t', '-f', 'SSID,SIGNAL,SECURITY,CHAN', 'dev', 'wifi', 'list', '--rescan', 'yes']
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
+        lines = res.stdout.strip().splitlines()
+        networks = []
+        seen = set()
+        for line in lines:
+            parts = line.split(':')
+            if len(parts) >= 2:
+                ssid = parts[0].strip()
+                if not ssid or ssid == 'Mi6-Setup-AP' or ssid in seen:
+                    continue
+                seen.add(ssid)
+                signal = int(parts[1]) if parts[1].isdigit() else 50
+                security = parts[2] if len(parts) >= 3 else ''
+                chan = parts[3] if len(parts) >= 4 else ''
+                networks.append({'ssid': ssid, 'signal': signal, 'security': security, 'chan': chan})
+        networks.sort(key=lambda x: x['signal'], reverse=True)
+        return networks
+    except Exception as e:
+        print(f"Scan error: {e}", file=sys.stderr)
+        return []
+
+def connect_in_background(ssid, password):
+    time.sleep(2)
+    print(f"Connecting to {ssid} in background...", flush=True)
+    try:
+        subprocess.run(['nmcli', 'connection', 'down', FALLBACK_AP], timeout=15)
+        time.sleep(1)
+        cmd = ['nmcli', 'dev', 'wifi', 'connect', ssid]
+        if password:
+            cmd.extend(['password', password])
+        print(f"Running: {' '.join(cmd)}", flush=True)
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+        print(f"Connect stdout: {res.stdout}", flush=True)
+        print(f"Connect stderr: {res.stderr}", flush=True)
+    except Exception as e:
+        print(f"Background connect failed: {e}", file=sys.stderr)
+
+class PortalHandler(http.server.BaseHTTPRequestHandler):
+    def do_HEAD(self):
+        self.do_GET()
+
+    def do_GET(self):
+        captive_paths = [
+            '/generate_204', '/gen_204', '/ncsi.txt', '/connecttest.txt',
+            '/hotspot-detect.html', '/canonical.html', '/success.txt'
+        ]
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+
+        if path in captive_paths:
+            self.send_response(302)
+            self.send_header('Location', 'http://192.168.12.1/')
+            self.end_headers()
+            return
+
+        if path == '/' or path == '/index.html':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(HTML_TEMPLATE.encode('utf-8'))
+            return
+
+        if path == '/api/scan':
+            networks = do_wifi_scan()
+            data = json.dumps(networks).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
+        if path == '/api/status':
+            data = json.dumps({'status': 'ap_mode', 'ip': '192.168.12.1', 'device': 'Xiaomi Mi 6'}).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
+        self.send_response(302)
+        self.send_header('Location', 'http://192.168.12.1/')
+        self.end_headers()
+
+    def do_POST(self):
+        if self.path == '/api/connect':
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8')
+            try:
+                payload = json.loads(body)
+                ssid = payload.get('ssid', '').strip()
+                password = payload.get('password', '')
+
+                if not ssid:
+                    self.send_response(400)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({'error': 'SSID cannot be empty'}).encode('utf-8'))
+                    return
+
+                resp = json.dumps({
+                    'status': 'ok',
+                    'message': f'正在切换连接到 {ssid}，热点将自动关闭。如连接成功，请在路由器查看设备新 IP。'
+                }).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(resp)
+
+                threading.Thread(target=connect_in_background, args=(ssid, password), daemon=True).start()
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+                return
+
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        sys.stderr.write("%s - - [%s] %s\n" % (self.address_string(), self.log_date_time_string(), format%args))
+
+class ReusableTCPServer(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+
+if __name__ == '__main__':
+    print(f"Starting Mi 6 Wi-Fi Setup Portal on port {PORT}...", flush=True)
+    with ReusableTCPServer(('0.0.0.0', PORT), PortalHandler) as httpd:
+        httpd.serve_forever()

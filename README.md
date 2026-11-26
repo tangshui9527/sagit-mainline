@@ -18,7 +18,7 @@
 | **GPU / 显示** | ✅ **完全正常** | Freedreno Adreno 540 DRM/KMS | 启用 `msm.separate_gpu_kms=1`，支持无头 GPU 计算与渲染 |
 | **USB 复合设备** | ✅ **完全正常** | ConfigFS (NCM 网络 + CDC-ACM 串口) | NCM 固定网段 `172.16.42.1` + ACM 终端 `/dev/ttyGS0` (免密 root) |
 | **电池 / 充电 / 旁路** | ✅ **完全正常** | `pmi8998-charger` (`qcom_smbx`) + `qcom-battery` | 支持充放电、电量计、`charge_behaviour` 真旁路供电及 `70%–80%` 自动保护 (`mi6-battery-guard`) |
-| **无线局域网 (Wi-Fi)**| ✅ **完全正常** | `ath10k_snoc` (WCN3990) | 双频 2.4G/5G，板载定标 `board-2.bin`，防崩溃 AMSDU 补丁 |
+| **无线局域网 (Wi-Fi)**| ✅ **完全正常** | `ath10k_snoc` (WCN3990) | 双频 2.4G/5G，防崩溃 AMSDU 补丁，**支持无网络自动回落 Fallback AP 网页配网** |
 | **蓝牙 (Bluetooth)** | ✅ **完全正常** | `hci_uart` / `btqca` (WCN3990) | 固件按序安全加载，固化出厂 MAC，BlueZ 5.82 + BlueALSA |
 | **扬声器外放 (Audio)** | ✅ **完全正常** | ASoC (`sdm845-sndcard`) + NXP TFA9888 | QDSP6 AFE/ASM `QUAT_MI2S_RX` -> TFA9888 双 Smart PA 立体声 |
 | **双麦克风拾音** | ✅ **完全正常** | Qualcomm WCD9335 Codec | 顶部降噪麦 (`ADC5`) + 底部主麦 (`ADC3`)，硬件偏置与时钟自适应 |
