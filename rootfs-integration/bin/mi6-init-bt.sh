@@ -47,16 +47,18 @@ run_btmgmt() {
     printf "" | timeout 5 btmgmt "$@"
 }
 
-# Wait up to 10s for hci0 to appear
-for _ in $(seq 1 50); do
-    if [ -d /sys/class/bluetooth/hci0 ]; then
+# Wait up to 20s for hci0 to finish QCA firmware setup and appear in BlueZ MGMT index 0
+MGMT_READY=0
+for _ in $(seq 1 100); do
+    if [ -d /sys/class/bluetooth/hci0 ] && run_btmgmt --index 0 info >/dev/null 2>&1; then
+        MGMT_READY=1
         break
     fi
     sleep 0.2
 done
 
-if [ ! -d /sys/class/bluetooth/hci0 ]; then
-    echo "hci0 did not appear within timeout" >&2
+if [ "$MGMT_READY" -ne 1 ]; then
+    echo "hci0 MGMT index 0 did not become ready within timeout" >&2
     exit 1
 fi
 
@@ -74,7 +76,19 @@ fi
 
 echo "Provisioning Bluetooth public address $BT_MAC on hci0..."
 run_btmgmt --index 0 power off >/dev/null 2>&1 || true
-run_btmgmt --index 0 public-addr "$BT_MAC"
+SET_OK=0
+for _ in $(seq 1 5); do
+    if run_btmgmt --index 0 public-addr "$BT_MAC"; then
+        SET_OK=1
+        break
+    fi
+    sleep 0.5
+done
+
+if [ "$SET_OK" -ne 1 ]; then
+    echo "Failed to set Bluetooth public address $BT_MAC on hci0" >&2
+    exit 1
+fi
 
 # Setting public-addr forces hci_qca to re-download firmware (~1.0-1.2s) and re-register hci0.
 # Poll until controller reports the provisioned address and leaves unconfigured state.
