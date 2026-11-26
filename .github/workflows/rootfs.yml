@@ -159,6 +159,15 @@ jobs:
               sudo sed -i 's/^#AutoEnable=true/AutoEnable=true/' rootfs/etc/bluetooth/main.conf
             fi
           fi
+          # ALSA default PCM routing & UCM2 hardware configuration
+          if [ -f rootfs-integration/alsa/asound.conf ]; then
+            sudo cp rootfs-integration/alsa/asound.conf rootfs/etc/asound.conf
+          fi
+          if [ -d rootfs-integration/alsa/ucm2 ]; then
+            sudo mkdir -p rootfs/usr/share/alsa/ucm2/Qualcomm/sdm845 rootfs/usr/share/alsa/ucm2/conf.d/sdm845
+            sudo cp rootfs-integration/alsa/ucm2/xiaomi-sagit*.conf rootfs/usr/share/alsa/ucm2/Qualcomm/sdm845/
+            sudo ln -sf ../../Qualcomm/sdm845/xiaomi-sagit.conf rootfs/usr/share/alsa/ucm2/conf.d/sdm845/xiaomi-sagit.conf
+          fi
           if [ -f rootfs-integration/systemd/diag-router.service ]; then
             sudo cp rootfs-integration/systemd/diag-router.service rootfs/etc/systemd/system/
             sudo ln -sf /etc/systemd/system/diag-router.service rootfs/etc/systemd/system/multi-user.target.wants/diag-router.service

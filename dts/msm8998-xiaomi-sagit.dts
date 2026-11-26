@@ -1178,19 +1178,18 @@
 		pinctrl-0 = <&quat_mi2s_active>;
 		audio-routing =
 			"RX_BIAS", "MCLK",
+			"AIF1 CAP", "MCLK",
+			"MIC BIAS1", "MCLK",
+			"MIC BIAS2", "MCLK",
+			"MIC BIAS4", "MCLK",
 			"AMIC1", "MIC BIAS2",
-			"MIC BIAS2", "Int Mic",
 			"AMIC2", "MIC BIAS2",
-			"MIC BIAS2", "Headset Mic",
+			"AMIC3", "MIC BIAS1",
 			"AMIC5", "MIC BIAS4",
-			"MIC BIAS4", "Int Mic",
 			"Headphone Jack", "HPHL",
 			"Headphone Jack", "HPHR",
 			"Left Spk", "Speaker OUTL",
-			"Right Spk", "Speaker OUTR",
-			"MM_DL1", "MultiMedia1 Playback",
-			"MM_DL2", "MultiMedia2 Playback",
-			"MultiMedia3 Capture", "MM_UL3";
+			"Right Spk", "Speaker OUTR";
 
 		mm1-dai-link {
 			link-name = "MultiMedia1";
