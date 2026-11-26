@@ -45,10 +45,10 @@ jobs:
           sudo mmdebstrap --arch=arm64 --variant=apt --mode=sudo \
             --include="systemd,systemd-sysv,dbus,openssh-server,network-manager,wpasupplicant,initramfs-tools,e2fsprogs,python3,chrony,kmod,sudo,ca-certificates,iproute2,iputils-ping,udev,nano,udhcpd,locales,login,util-linux,bash-completion,curl,wget,htop,fake-hwclock" \
             trixie rootfs http://deb.debian.org/debian
-          # Qualcomm userspace (may not all exist in trixie; record what lands)
+          # Qualcomm userspace & BT/Audio tools (may not all exist in trixie; record what lands)
           sudo chroot rootfs /bin/sh -c '
             DEBIAN_FRONTEND=noninteractive apt-get update -qq &&
-            for p in qrtr pd-mapper rmtfs tqftpserv; do
+            for p in qrtr pd-mapper rmtfs tqftpserv bluez alsa-utils bluez-alsa-utils i2c-tools; do
               apt-get install -y --no-install-recommends $p || echo "SKIP: $p not in trixie";
             done'
           echo "qualcomm userspace:" && ls rootfs/usr/bin | grep -E '^(qrtr|pd-mapper|rmtfs|tqftpserv)' || true
@@ -151,6 +151,13 @@ jobs:
           if [ -f rootfs-integration/systemd/mi6-bluetooth.service ]; then
             sudo cp rootfs-integration/systemd/mi6-bluetooth.service rootfs/etc/systemd/system/
             sudo ln -sf /etc/systemd/system/mi6-bluetooth.service rootfs/etc/systemd/system/bluetooth.target.wants/mi6-bluetooth.service
+            sudo ln -sf /etc/systemd/system/mi6-bluetooth.service rootfs/etc/systemd/system/multi-user.target.wants/mi6-bluetooth.service
+          fi
+          if [ -d rootfs/etc/bluetooth ]; then
+            sudo chmod 555 rootfs/etc/bluetooth
+            if [ -f rootfs/etc/bluetooth/main.conf ]; then
+              sudo sed -i 's/^#AutoEnable=true/AutoEnable=true/' rootfs/etc/bluetooth/main.conf
+            fi
           fi
           if [ -f rootfs-integration/systemd/diag-router.service ]; then
             sudo cp rootfs-integration/systemd/diag-router.service rootfs/etc/systemd/system/

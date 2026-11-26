@@ -1,0 +1,458 @@
+From: Tangshui <tangshui@sagit-mainline>
+Subject: [PATCH] ASoC: codecs: add NXP TFA9888 (TFA2) stereo/speaker amplifier driver
+
+Add a lightweight ALSA SoC codec driver for the NXP TFA9888 smart PA
+found on the Xiaomi Mi 6 (sagit) on I2C (0x34) wired to Quaternary MI2S.
+
+This driver unlocks and applies the NXP TFA9888 N1C/N2C analog, boost,
+and TDM configuration from the downstream initializer and routes TDM I2S
+audio directly into the Class-D speaker/earpiece amplifier paths with
+ALSA mixer switches for Speaker, Earpiece, Receiver mode, Boost, and
+analog gain.
+
+Signed-off-by: Tangshui <tangshui@sagit-mainline>
+---
+ sound/soc/codecs/Kconfig   |  10 ++
+ sound/soc/codecs/Makefile  |   2 +
+ sound/soc/codecs/tfa9888.c | 342 +++++++++++++++++++++++++++++++++++++
+ 3 files changed, 354 insertions(+)
+ create mode 100644 sound/soc/codecs/tfa9888.c
+
+diff --git a/sound/soc/codecs/Kconfig b/sound/soc/codecs/Kconfig
+index 000000000000..000000000000 100644
+--- a/sound/soc/codecs/Kconfig
++++ b/sound/soc/codecs/Kconfig
+@@ -2297,6 +2297,16 @@ config SND_SOC_TFA9879
+ 	tristate "NXP Semiconductors TFA9879 amplifier"
+ 	depends on I2C
+ 
++config SND_SOC_TFA9888
++	tristate "NXP/Goodix TFA9888 (TFA2) dual speaker/receiver amplifier"
++	depends on I2C
++	select REGMAP_I2C
++	help
++	  Enable support for NXP (now Goodix) TFA9888 (TFA2 family) stereo
++	  speaker and receiver amplifier in direct TDM/I2S bypass mode
++	  (e.g. Xiaomi Mi 6). Exposes Speaker/Earpiece channel enables,
++	  Receiver mode, DCDC boost, and amplifier gain controls.
++
+ config SND_SOC_TFA989X
+ 	tristate "NXP/Goodix TFA989X (TFA1) amplifiers"
+ 	depends on I2C
+diff --git a/sound/soc/codecs/Makefile b/sound/soc/codecs/Makefile
+index 000000000000..000000000000 100644
+--- a/sound/soc/codecs/Makefile
++++ b/sound/soc/codecs/Makefile
+@@ -282,6 +282,7 @@ snd-soc-tas5805m-y := tas5805m.o
+ snd-soc-tas6424-y := tas6424.o
+ snd-soc-tda7419-y := tda7419.o
+ snd-soc-tfa9879-y := tfa9879.o
++snd-soc-tfa9888-y := tfa9888.o
+ snd-soc-tfa989x-y := tfa989x.o
+ snd-soc-tlv320adc3xxx-y := tlv320adc3xxx.o
+ snd-soc-tlv320aic23-y := tlv320aic23.o
+@@ -776,6 +777,7 @@ obj-$(CONFIG_SND_SOC_TAS675X)	+= snd-soc-tas675x.o
+ obj-$(CONFIG_SND_SOC_TDA7419)	+= snd-soc-tda7419.o
+ obj-$(CONFIG_SND_SOC_TAS2770) += snd-soc-tas2770.o
+ obj-$(CONFIG_SND_SOC_TFA9879)	+= snd-soc-tfa9879.o
++obj-$(CONFIG_SND_SOC_TFA9888)	+= snd-soc-tfa9888.o
+ obj-$(CONFIG_SND_SOC_TFA989X)	+= snd-soc-tfa989x.o
+ obj-$(CONFIG_SND_SOC_TLV320ADC3XXX)	+= snd-soc-tlv320adc3xxx.o
+ obj-$(CONFIG_SND_SOC_TLV320AIC23)	+= snd-soc-tlv320aic23.o
+diff --git a/sound/soc/codecs/tfa9888.c b/sound/soc/codecs/tfa9888.c
+new file mode 100644
+index 000000000000..000000000000
+--- /dev/null
++++ b/sound/soc/codecs/tfa9888.c
+@@ -0,0 +1,342 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * ALSA SoC driver for NXP/Goodix TFA9888 (TFA2) dual speaker/receiver amplifier
++ * in direct TDM/I2S bypass mode (no CoolFlux DSP firmware required).
++ */
++
++#include <linux/delay.h>
++#include <linux/gpio/consumer.h>
++#include <linux/i2c.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/regmap.h>
++#include <linux/regulator/consumer.h>
++#include <sound/pcm.h>
++#include <sound/pcm_params.h>
++#include <sound/soc.h>
++
++#define TFA9888_SYS_CONTROL0		0x00
++#define TFA9888_SYS_CONTROL0_PWDN	BIT(0)
++#define TFA9888_SYS_CONTROL0_I2CR	BIT(1)
++#define TFA9888_SYS_CONTROL0_CFE	BIT(2)
++#define TFA9888_SYS_CONTROL0_AMPE	BIT(3)
++#define TFA9888_SYS_CONTROL0_DCA	BIT(4)
++#define TFA9888_SYS_CONTROL0_SBSL	BIT(5)
++#define TFA9888_SYS_CONTROL0_AMPC	BIT(6)
++
++#define TFA9888_SYS_CONTROL1		0x01
++#define TFA9888_SYS_CONTROL1_AMPINSEL	GENMASK(1, 0)
++#define TFA9888_SYS_CONTROL1_MANSCONF	BIT(2)
++#define TFA9888_SYS_CONTROL1_MANCOLD	BIT(3)
++
++#define TFA9888_SYS_CONTROL2		0x02
++#define TFA9888_SYS_CONTROL2_AUDFS_MSK	GENMASK(3, 0)
++
++#define TFA9888_REVISIONNUMBER		0x03
++#define TFA9888_REV_FAMILY_MASK		GENMASK(7, 0)
++#define TFA9888_REV_FAMILY_VALUE	0x88
++
++#define TFA9888_CLOCK_CONTROL		0x04
++#define TFA9888_CLOCK_GATING_CONTROL	0x05
++#define TFA9888_SSLEFTE			BIT(0)
++#define TFA9888_SSRIGHTE		BIT(1)
++
++#define TFA9888_CTRL_DIGTOANA		0x0e
++#define TFA9888_UNLOCK_KEY1		0x0f
++
++#define TFA9888_STATUS_FLAGS0		0x10
++#define TFA9888_STATUS_CLKS		BIT(5)
++#define TFA9888_STATUS_AREFS		BIT(13)
++
++#define TFA9888_TDM_CONFIG0		0x20
++#define TFA9888_TDM_CONFIG1		0x21
++#define TFA9888_TDM_CONFIG1_TDMDEL	BIT(14)
++#define TFA9888_TDM_CONFIG1_TDMADJ	BIT(15)
++#define TFA9888_TDM_CONFIG2		0x22
++#define TFA9888_TDM_CONFIG2_SSIZE_MSK	GENMASK(6, 2)
++#define TFA9888_TDM_CONFIG2_SSIZE(v)	(((v) << 2) & TFA9888_TDM_CONFIG2_SSIZE_MSK)
++#define TFA9888_TDM_CONFIG3		0x23
++#define TFA9888_TDM_CONFIG4		0x24
++#define TFA9888_TDM_CONFIG5		0x25
++#define TFA9888_TDM_CONFIG6		0x26
++#define TFA9888_TDM_CONFIG8		0x28
++
++#define TFA9888_AUDIO_CONTROL		0x51
++#define TFA9888_AMPLIFIER_CONFIG	0x52
++#define TFA9888_AMP_CONFIG_RCV		BIT(0)
++#define TFA9888_AMP_CONFIG_GAIN_SHIFT	5
++
++#define TFA9888_DCDC_CONTROL0		0x70
++#define TFA9888_DCDC_CONTROL1		0x71
++#define TFA9888_TEMP_SENSOR_CONFIG	0x83
++#define TFA9888_UNLOCK_KEY2		0xa0
++#define TFA9888_UNLOCK_KEY2_SEED	0xfb
++
++struct tfa9888 {
++	struct device *dev;
++	struct regmap *regmap;
++	struct gpio_desc *reset_gpio;
++	struct regulator *vddd_supply;
++	u16 rev;
++};
++
++static const struct regmap_config tfa9888_regmap_cfg = {
++	.reg_bits = 8,
++	.val_bits = 16,
++	.max_register = 0xff,
++	.cache_type = REGCACHE_NONE,
++};
++
++static const struct snd_kcontrol_new tfa9888_snd_controls[] = {
++	SOC_SINGLE("Speaker Switch", TFA9888_CLOCK_GATING_CONTROL, 0, 1, 0),
++	SOC_SINGLE("Earpiece Switch", TFA9888_CLOCK_GATING_CONTROL, 1, 1, 0),
++	SOC_SINGLE("Receiver Mode Switch", TFA9888_AMPLIFIER_CONFIG, 0, 1, 0),
++	SOC_SINGLE("Boost Switch", TFA9888_SYS_CONTROL0, 4, 1, 0),
++	SOC_SINGLE("Master Playback Volume", TFA9888_AMPLIFIER_CONFIG,
++		   TFA9888_AMP_CONFIG_GAIN_SHIFT, 255, 0),
++};
++
++static const struct snd_soc_dapm_widget tfa9888_dapm_widgets[] = {
++	SND_SOC_DAPM_OUTPUT("OUTL"),
++	SND_SOC_DAPM_OUTPUT("OUTR"),
++	SND_SOC_DAPM_AIF_IN("AIFINL", "HiFi Playback", 0, SND_SOC_NOPM, 0, 0),
++	SND_SOC_DAPM_AIF_IN("AIFINR", "HiFi Playback", 1, SND_SOC_NOPM, 0, 0),
++};
++
++static const struct snd_soc_dapm_route tfa9888_dapm_routes[] = {
++	{ "OUTL", NULL, "AIFINL" },
++	{ "OUTR", NULL, "AIFINR" },
++};
++
++static const struct snd_soc_component_driver tfa9888_component = {
++	.controls		= tfa9888_snd_controls,
++	.num_controls		= ARRAY_SIZE(tfa9888_snd_controls),
++	.dapm_widgets		= tfa9888_dapm_widgets,
++	.num_dapm_widgets	= ARRAY_SIZE(tfa9888_dapm_widgets),
++	.dapm_routes		= tfa9888_dapm_routes,
++	.num_dapm_routes	= ARRAY_SIZE(tfa9888_dapm_routes),
++	.endianness		= 1,
++};
++
++static const unsigned int tfa9888_rates[] = {
++	8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000
++};
++
++static int tfa9888_hw_params(struct snd_pcm_substream *substream,
++			     struct snd_pcm_hw_params *params,
++			     struct snd_soc_dai *dai)
++{
++	struct snd_soc_component *comp = dai->component;
++	struct tfa9888 *tfa = snd_soc_component_get_drvdata(comp);
++	unsigned int rate = params_rate(params);
++	int width = params_width(params);
++	int sr = -EINVAL;
++	int i, ret;
++
++	for (i = 0; i < ARRAY_SIZE(tfa9888_rates); i++) {
++		if (tfa9888_rates[i] == rate) {
++			sr = i;
++			break;
++		}
++	}
++	if (sr < 0)
++		return sr;
++
++	ret = regmap_update_bits(tfa->regmap, TFA9888_SYS_CONTROL2,
++				 TFA9888_SYS_CONTROL2_AUDFS_MSK, sr);
++	if (ret)
++		return ret;
++
++	if (width >= 8 && width <= 32) {
++		ret = regmap_update_bits(tfa->regmap, TFA9888_TDM_CONFIG2,
++					 TFA9888_TDM_CONFIG2_SSIZE_MSK,
++					 TFA9888_TDM_CONFIG2_SSIZE(width - 1));
++		if (ret)
++			return ret;
++	}
++
++	return 0;
++}
++
++static int tfa9888_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
++{
++	struct tfa9888 *tfa = snd_soc_component_get_drvdata(dai->component);
++	u16 mask = TFA9888_TDM_CONFIG1_TDMDEL | TFA9888_TDM_CONFIG1_TDMADJ;
++	u16 val;
++
++	if ((fmt & SND_SOC_DAIFMT_CLOCK_PROVIDER_MASK) != SND_SOC_DAIFMT_CBC_CFC)
++		return -EINVAL;
++
++	switch (fmt & SND_SOC_DAIFMT_FORMAT_MASK) {
++	case SND_SOC_DAIFMT_I2S:
++		val = TFA9888_TDM_CONFIG1_TDMDEL;
++		break;
++	case SND_SOC_DAIFMT_LEFT_J:
++	case SND_SOC_DAIFMT_DSP_B:
++		val = 0;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	return regmap_update_bits(tfa->regmap, TFA9888_TDM_CONFIG1, mask, val);
++}
++
++static int tfa9888_mute_stream(struct snd_soc_dai *dai, int mute, int stream)
++{
++	struct tfa9888 *tfa = snd_soc_component_get_drvdata(dai->component);
++	unsigned int status = 0;
++	int i, ret;
++
++	if (mute) {
++		regmap_clear_bits(tfa->regmap, TFA9888_SYS_CONTROL0,
++				  TFA9888_SYS_CONTROL0_AMPE);
++		regmap_clear_bits(tfa->regmap, TFA9888_SYS_CONTROL1,
++				  TFA9888_SYS_CONTROL1_MANSCONF);
++		regmap_set_bits(tfa->regmap, TFA9888_SYS_CONTROL0,
++				TFA9888_SYS_CONTROL0_PWDN);
++		return 0;
++	}
++
++	ret = regmap_clear_bits(tfa->regmap, TFA9888_SYS_CONTROL0,
++				TFA9888_SYS_CONTROL0_PWDN);
++	if (ret)
++		return ret;
++
++	ret = regmap_set_bits(tfa->regmap, TFA9888_SYS_CONTROL1,
++			      TFA9888_SYS_CONTROL1_MANSCONF);
++	if (ret)
++		return ret;
++
++	for (i = 0; i < 25; i++) {
++		ret = regmap_read(tfa->regmap, TFA9888_STATUS_FLAGS0, &status);
++		if (!ret && (status & TFA9888_STATUS_AREFS) &&
++		    (status & TFA9888_STATUS_CLKS))
++			break;
++		usleep_range(2000, 3000);
++	}
++
++	if (!(status & TFA9888_STATUS_CLKS))
++		dev_warn(tfa->dev, "clock unstable before unmute (status=0x%04x)\n",
++			 status);
++
++	return regmap_set_bits(tfa->regmap, TFA9888_SYS_CONTROL0,
++			       TFA9888_SYS_CONTROL0_AMPE);
++}
++
++static const struct snd_soc_dai_ops tfa9888_dai_ops = {
++	.hw_params	= tfa9888_hw_params,
++	.set_fmt	= tfa9888_set_fmt,
++	.mute_stream	= tfa9888_mute_stream,
++	.no_capture_mute = 1,
++};
++
++static struct snd_soc_dai_driver tfa9888_dai = {
++	.name = "tfa9888-hifi",
++	.playback = {
++		.stream_name	= "HiFi Playback",
++		.formats	= SNDRV_PCM_FMTBIT_S16_LE,
++		.rates		= SNDRV_PCM_RATE_8000_48000,
++		.rate_min	= 8000,
++		.rate_max	= 48000,
++		.channels_min	= 1,
++		.channels_max	= 2,
++	},
++	.ops = &tfa9888_dai_ops,
++};
++
++static int tfa9888_hw_init(struct tfa9888 *tfa)
++{
++	struct regmap *rm = tfa->regmap;
++	unsigned int key = 0;
++	int ret;
++
++	/* Soft reset I2C registers to POR state */
++	ret = regmap_write(rm, TFA9888_SYS_CONTROL0, TFA9888_SYS_CONTROL0_I2CR);
++	if (ret)
++		return ret;
++	usleep_range(1000, 2000);
++
++	/* Unlock key-protected factory/analog trim registers */
++	ret = regmap_write(rm, TFA9888_UNLOCK_KEY1, 0x5a6b);
++	if (ret)
++		return ret;
++	ret = regmap_read(rm, TFA9888_UNLOCK_KEY2_SEED, &key);
++	if (ret)
++		return ret;
++	ret = regmap_write(rm, TFA9888_UNLOCK_KEY2, key ^ 0x005a);
++	if (ret)
++		return ret;
++
++	/*
++	 * Program N1C/N2C optimal analog/boost settings and direct TDM/I2S
++	 * bypass path (32*fs BCLK, 16-bit stereo, CoolFlux DSP disabled,
++	 * DCDC boost enabled, starting in power-down until playback).
++	 */
++	regmap_write(rm, TFA9888_SYS_CONTROL0, 0x1611);
++	regmap_write(rm, TFA9888_SYS_CONTROL1, 0x8280);
++	regmap_write(rm, TFA9888_SYS_CONTROL2, 0x1dc8);
++	regmap_write(rm, TFA9888_CLOCK_GATING_CONTROL, TFA9888_SSLEFTE | TFA9888_SSRIGHTE);
++	regmap_write(rm, TFA9888_CTRL_DIGTOANA, 0x0080);
++	regmap_write(rm, TFA9888_TDM_CONFIG0, 0x0890);
++	regmap_write(rm, TFA9888_TDM_CONFIG2, 0x543c);
++	regmap_write(rm, TFA9888_TDM_CONFIG3, 0x0006);
++	regmap_write(rm, TFA9888_TDM_CONFIG4, 0x0014);
++	regmap_write(rm, TFA9888_TDM_CONFIG5, 0x000a);
++	regmap_write(rm, TFA9888_TDM_CONFIG6, 0x0100);
++	regmap_write(rm, TFA9888_TDM_CONFIG8, 0x1000);
++	regmap_write(rm, TFA9888_AUDIO_CONTROL, 0x0000);
++	regmap_write(rm, TFA9888_AMPLIFIER_CONFIG, 0xfafe);
++	regmap_write(rm, TFA9888_DCDC_CONTROL0, 0x3ee4);
++	regmap_write(rm, TFA9888_DCDC_CONTROL1, 0x1074);
++	regmap_write(rm, TFA9888_TEMP_SENSOR_CONFIG, 0x0014);
++
++	return 0;
++}
++
++static void tfa9888_regulator_disable(void *data)
++{
++	struct regulator *reg = data;
++
++	regulator_disable(reg);
++}
++
++static int tfa9888_i2c_probe(struct i2c_client *i2c)
++{
++	struct device *dev = &i2c->dev;
++	struct tfa9888 *tfa;
++	unsigned int rev = 0;
++	int ret;
++
++	tfa = devm_kzalloc(dev, sizeof(*tfa), GFP_KERNEL);
++	if (!tfa)
++		return -ENOMEM;
++
++	tfa->dev = dev;
++	i2c_set_clientdata(i2c, tfa);
++
++	tfa->vddd_supply = devm_regulator_get_optional(dev, "vddd");
++	if (IS_ERR(tfa->vddd_supply)) {
++		if (PTR_ERR(tfa->vddd_supply) != -ENODEV)
++			return dev_err_probe(dev, PTR_ERR(tfa->vddd_supply),
++					     "Failed to get vddd regulator\n");
++		tfa->vddd_supply = NULL;
++	} else {
++		ret = regulator_enable(tfa->vddd_supply);
++		if (ret)
++			return dev_err_probe(dev, ret,
++					     "Failed to enable vddd regulator\n");
++		ret = devm_add_action_or_reset(dev, tfa9888_regulator_disable,
++					       tfa->vddd_supply);
++		if (ret)
++			return ret;
++	}
++
++	tfa->reset_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
++	if (IS_ERR(tfa->reset_gpio))
++		return dev_err_probe(dev, PTR_ERR(tfa->reset_gpio),
++				     "Failed to get reset GPIO\n");
++
++	if (tfa->reset_gpio) {
++		gpiod_set_value_cansleep(tfa->reset_gpio, 1);
++		msleep(10);
++		gpiod_set_value_cansleep(tfa->reset_gpio, 0);
++		msleep(10);
++	}
++
++	tfa->regmap = devm_regmap_init_i2c(i2c, &tfa9888_regmap_cfg);
++	if (IS_ERR(tfa->regmap))
++		return PTR_ERR(tfa->regmap);
++
++	/* Dummy read to wake I2C clock, then check device revision */
++	regmap_read(tfa->regmap, TFA9888_REVISIONNUMBER, &rev);
++	ret = regmap_read(tfa->regmap, TFA9888_REVISIONNUMBER, &rev);
++	if (ret)
++		return dev_err_probe(dev, ret, "Failed to read TFA9888 rev\n");
++
++	if ((rev & TFA9888_REV_FAMILY_MASK) != TFA9888_REV_FAMILY_VALUE) {
++		dev_err(dev, "Unexpected revision 0x%04x\n", rev);
++		return -ENODEV;
++	}
++	tfa->rev = rev;
++	dev_info(dev, "TFA9888 detected (rev=0x%04x)\n", tfa->rev);
++
++	ret = tfa9888_hw_init(tfa);
++	if (ret)
++		return dev_err_probe(dev, ret, "Failed to initialize TFA9888\n");
++
++	return devm_snd_soc_register_component(dev, &tfa9888_component,
++					       &tfa9888_dai, 1);
++}
++
++static const struct of_device_id tfa9888_of_match[] = {
++	{ .compatible = "nxp,tfa9888" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, tfa9888_of_match);
++
++static struct i2c_driver tfa9888_i2c_driver = {
++	.driver = {
++		.name = "tfa9888",
++		.of_match_table = tfa9888_of_match,
++	},
++	.probe = tfa9888_i2c_probe,
++};
++module_i2c_driver(tfa9888_i2c_driver);
++
++MODULE_DESCRIPTION("ASoC NXP/Goodix TFA9888 (TFA2) speaker amplifier driver");
++MODULE_AUTHOR("Tangshui <tangshui@sagit-mainline>");
++MODULE_LICENSE("GPL");
+-- 
+2.43.0

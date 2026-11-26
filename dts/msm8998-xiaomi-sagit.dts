@@ -13,9 +13,14 @@
 #include "pm8005.dtsi"
 #include "pm8998.dtsi"
 #include "pmi8998.dtsi"
+#include <dt-bindings/clock/qcom,rpmcc.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/leds/common.h>
 #include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
+#include <dt-bindings/soc/qcom,apr.h>
+#include <dt-bindings/sound/qcom,q6afe.h>
+#include <dt-bindings/sound/qcom,q6asm.h>
+#include <dt-bindings/sound/qcom,wcd9335.h>
 
 /*
  * Delete following upstream (msm8998.dtsi) reserved
@@ -203,6 +208,17 @@
 		enable-active-high;
 		regulator-always-on;
 		regulator-boot-on;
+	};
+
+	clocks {
+		div1_mclk: divclk1 {
+			compatible = "gpio-gate-clock";
+			pinctrl-names = "default";
+			pinctrl-0 = <&audio_mclk_pin>;
+			clocks = <&rpmcc RPM_SMD_DIV_CLK1>;
+			#clock-cells = <0>;
+			enable-gpios = <&pm8998_gpios 13 GPIO_ACTIVE_HIGH>;
+		};
 	};
 
 	battery: battery {
@@ -670,6 +686,29 @@
 		function = "gpio";
 		bias-pull-down;
 		drive-strength = <2>;
+		input-enable;
+	};
+
+	quat_mi2s_active: quat-mi2s-active-state {
+		pins = "gpio58", "gpio59", "gpio60", "gpio61";
+		function = "qua_mi2s";
+		drive-strength = <8>;
+		bias-disable;
+	};
+
+	tfa9888_rst_default: tfa9888-rst-default-state {
+		pins = "gpio41";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+	};
+
+	tfa9888_irq_default: tfa9888-irq-default-state {
+		pins = "gpio42";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-up;
+		input-enable;
 	};
 
 	wsa_leftspk_pwr_n_state: wsa-leftspk-pwr-n-state {
@@ -965,7 +1004,243 @@
 	status = "okay";
 };
 
+/* Audio subsystem: TFA9888 smart PA + SLIMbus + WCD9335 + ADSP APR/QDSP6 */
+&blsp2_i2c4 {
+	status = "okay";
+
+	tfa9888: audio-codec@34 {
+		compatible = "nxp,tfa9888";
+		reg = <0x34>;
+		reset-gpios = <&tlmm 41 GPIO_ACTIVE_HIGH>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <42 IRQ_TYPE_EDGE_FALLING>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&tfa9888_rst_default &tfa9888_irq_default>;
+		sound-name-prefix = "Speaker";
+		#sound-dai-cells = <0>;
+	};
+};
+
+&lpass_q6_smmu {
+	status = "okay";
+};
+
+&soc {
+	slimbam: dma-controller@17184000 {
+		compatible = "qcom,bam-v1.7.0";
+		qcom,controlled-remotely;
+		reg = <0x17184000 0x32000>;
+		num-channels = <31>;
+		interrupts = <GIC_SPI 164 IRQ_TYPE_LEVEL_HIGH>;
+		#dma-cells = <1>;
+		qcom,ee = <1>;
+		qcom,num-ees = <2>;
+		status = "okay";
+	};
+
+	slim: slim@171c0000 {
+		compatible = "qcom,slim-ngd-v2.1.0";
+		reg = <0x171c0000 0x2c000>;
+		interrupts = <GIC_SPI 163 IRQ_TYPE_LEVEL_HIGH>;
+		qcom,apps-ch-pipes = <0x1f80>;
+		qcom,ea-pc = <0x210>;
+		dmas = <&slimbam 3>, <&slimbam 4>,
+		       <&slimbam 5>, <&slimbam 6>;
+		dma-names = "rx", "tx", "tx2", "rx2";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		status = "okay";
+
+		slim_ngd: ngd@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			tasha_ifd: tas-ifd@0 {
+				compatible = "slim217,1a0";
+				reg = <0 0>;
+			};
+
+			wcd9335: codec@1 {
+				compatible = "slim217,1a0";
+				reg = <1 0>;
+
+				clock-names = "mclk", "slimbus";
+				clocks = <&div1_mclk>,
+					 <&rpmcc RPM_SMD_LN_BB_CLK1>;
+				#clock-cells = <0>;
+
+				interrupt-parent = <&tlmm>;
+				interrupts = <54 IRQ_TYPE_LEVEL_HIGH>;
+				interrupt-names = "intr1";
+				interrupt-controller;
+				#interrupt-cells = <1>;
+
+				pinctrl-names = "default";
+				pinctrl-0 = <&cdc_reset_n_state &wcd_int_n_state>;
+
+				reset-gpios = <&tlmm 64 GPIO_ACTIVE_LOW>;
+				slim-ifc-dev = <&tasha_ifd>;
+
+				vdd-buck-supply = <&vreg_s4a_1p8>;
+				vdd-buck-sido-supply = <&vreg_s4a_1p8>;
+				vdd-tx-supply = <&vreg_s4a_1p8>;
+				vdd-rx-supply = <&vreg_s4a_1p8>;
+				vdd-io-supply = <&vreg_s4a_1p8>;
+
+				#sound-dai-cells = <1>;
+			};
+		};
+	};
+};
+
 &remoteproc_adsp {
 	firmware-name = "qcom/msm8998/xiaomi/adsp.mbn";
 	status = "okay";
+
+	glink-edge {
+		apr {
+			compatible = "qcom,apr-v2";
+			power-domains = <&gcc LPASS_ADSP_GDSC>;
+			qcom,glink-channels = "apr_audio_svc";
+			qcom,apr-domain = <APR_DOMAIN_ADSP>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			qcom,intents = <512 20>;
+
+			apr-service@3 {
+				reg = <APR_SVC_ADSP_CORE>;
+				compatible = "qcom,q6core";
+				qcom,protection-domain = "avs/audio", "msm/adsp/audio_pd";
+			};
+
+			q6afe: apr-service@4 {
+				compatible = "qcom,q6afe";
+				reg = <APR_SVC_AFE>;
+				qcom,protection-domain = "avs/audio", "msm/adsp/audio_pd";
+
+				q6afedai: dais {
+					compatible = "qcom,q6afe-dais";
+					#address-cells = <1>;
+					#size-cells = <0>;
+					#sound-dai-cells = <1>;
+				};
+			};
+
+			q6asm: apr-service@7 {
+				compatible = "qcom,q6asm";
+				reg = <APR_SVC_ASM>;
+				qcom,protection-domain = "avs/audio", "msm/adsp/audio_pd";
+
+				q6asmdai: dais {
+					compatible = "qcom,q6asm-dais";
+					#address-cells = <1>;
+					#size-cells = <0>;
+					#sound-dai-cells = <1>;
+					iommus = <&lpass_q6_smmu 1>;
+				};
+			};
+
+			q6adm: apr-service@8 {
+				compatible = "qcom,q6adm";
+				reg = <APR_SVC_ADM>;
+				qcom,protection-domain = "avs/audio", "msm/adsp/audio_pd";
+
+				q6routing: routing {
+					compatible = "qcom,q6adm-routing";
+					#sound-dai-cells = <0>;
+				};
+			};
+		};
+	};
+};
+
+/ {
+	sound: sound {
+		compatible = "qcom,sdm845-sndcard";
+		model = "xiaomi-sagit";
+		pinctrl-names = "default";
+		pinctrl-0 = <&quat_mi2s_active>;
+		audio-routing =
+			"RX_BIAS", "MCLK",
+			"AMIC1", "MIC BIAS2",
+			"MIC BIAS2", "Int Mic",
+			"AMIC2", "MIC BIAS2",
+			"MIC BIAS2", "Headset Mic",
+			"AMIC5", "MIC BIAS4",
+			"MIC BIAS4", "Int Mic",
+			"Headphone Jack", "HPHL",
+			"Headphone Jack", "HPHR",
+			"Left Spk", "Speaker OUTL",
+			"Right Spk", "Speaker OUTR",
+			"MM_DL1", "MultiMedia1 Playback",
+			"MM_DL2", "MultiMedia2 Playback",
+			"MultiMedia3 Capture", "MM_UL3";
+
+		mm1-dai-link {
+			link-name = "MultiMedia1";
+			cpu {
+				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA1>;
+			};
+		};
+
+		mm2-dai-link {
+			link-name = "MultiMedia2";
+			cpu {
+				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA2>;
+			};
+		};
+
+		mm3-dai-link {
+			link-name = "MultiMedia3";
+			cpu {
+				sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA3>;
+			};
+		};
+
+		speaker-dai-link {
+			link-name = "Speaker Playback";
+			cpu {
+				sound-dai = <&q6afedai QUATERNARY_MI2S_RX>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&tfa9888>;
+			};
+		};
+
+		slim-dai-link {
+			link-name = "SLIM Playback";
+			cpu {
+				sound-dai = <&q6afedai SLIMBUS_0_RX>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&wcd9335 AIF1_PB>;
+			};
+		};
+
+		slimcap-dai-link {
+			link-name = "SLIM Capture";
+			cpu {
+				sound-dai = <&q6afedai SLIMBUS_0_TX>;
+			};
+
+			platform {
+				sound-dai = <&q6routing>;
+			};
+
+			codec {
+				sound-dai = <&wcd9335 AIF1_CAP>;
+			};
+		};
+	};
 };

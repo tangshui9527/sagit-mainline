@@ -1,7 +1,8 @@
 [Unit]
 Description=Initialize Xiaomi Mi 6 Bluetooth MAC and Controller
 Before=bluetooth.service
-After=systemd-modules-load.service
+After=systemd-modules-load.service local-fs.target
+Wants=local-fs.target
 
 [Service]
 Type=oneshot
