@@ -14,8 +14,8 @@ Signed-off-by: Tangshui <tangshui@sagit-mainline>
 ---
  sound/soc/codecs/Kconfig   |  10 ++
  sound/soc/codecs/Makefile  |   2 +
- sound/soc/codecs/tfa9888.c | 342 +++++++++++++++++++++++++++++++++++++
- 3 files changed, 354 insertions(+)
+ sound/soc/codecs/tfa9888.c | 389 +++++++++++++++++++++++++++++++++++++
+ 3 files changed, 401 insertions(+)
  create mode 100644 sound/soc/codecs/tfa9888.c
 
 diff --git a/sound/soc/codecs/Kconfig b/sound/soc/codecs/Kconfig
@@ -64,7 +64,7 @@ new file mode 100644
 index 000000000000..000000000000
 --- /dev/null
 +++ b/sound/soc/codecs/tfa9888.c
-@@ -0,0 +1,342 @@
+@@ -0,0 +1,389 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * ALSA SoC driver for NXP/Goodix TFA9888 (TFA2) dual speaker/receiver amplifier
@@ -345,7 +345,7 @@ index 000000000000..000000000000
 +	regmap_write(rm, TFA9888_SYS_CONTROL2, 0x1dc8);
 +	regmap_write(rm, TFA9888_CLOCK_GATING_CONTROL, TFA9888_SSLEFTE | TFA9888_SSRIGHTE);
 +	regmap_write(rm, TFA9888_CTRL_DIGTOANA, 0x0080);
-+	regmap_write(rm, TFA9888_TDM_CONFIG0, 0x0890);
++	regmap_write(rm, TFA9888_TDM_CONFIG0, 0x089e);
 +	regmap_write(rm, TFA9888_TDM_CONFIG2, 0x543c);
 +	regmap_write(rm, TFA9888_TDM_CONFIG3, 0x0006);
 +	regmap_write(rm, TFA9888_TDM_CONFIG4, 0x0014);
