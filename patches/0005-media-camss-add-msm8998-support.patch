@@ -1,0 +1,392 @@
+From: tangshui9527 <tangshui1122@gmail.com>
+Subject: [PATCH] media: qcom: camss: add MSM8998 support
+
+---
+diff --git a/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c b/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c
+index dac8d2e..0a0c1e9 100644
+--- a/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c
++++ b/drivers/media/platform/qcom/camss/camss-csiphy-3ph-1-0.c
+@@ -1074,7 +1074,8 @@ static void csiphy_gen1_config_lanes(struct csiphy_device *csiphy,
+ 	val = CSIPHY_3PH_LNn_CFG1_SWI_REC_DLY_PRG;
+ 	writel_relaxed(val, csiphy->base + CSIPHY_3PH_LNn_CFG1(l));
+ 
+-	if (csiphy->camss->res->version == CAMSS_660)
++	if (csiphy->camss->res->version == CAMSS_660 ||
++	    csiphy->camss->res->version == CAMSS_8998)
+ 		val = CSIPHY_3PH_LNn_CFG4_T_HS_CLK_MISS_660;
+ 	else
+ 		val = CSIPHY_3PH_LNn_CFG4_T_HS_CLK_MISS;
+diff --git a/drivers/media/platform/qcom/camss/camss-csiphy.c b/drivers/media/platform/qcom/camss/camss-csiphy.c
+index 539ac48..890e693 100644
+--- a/drivers/media/platform/qcom/camss/camss-csiphy.c
++++ b/drivers/media/platform/qcom/camss/camss-csiphy.c
+@@ -606,7 +606,8 @@ int msm_csiphy_subdev_init(struct camss *camss,
+ 	if (camss->res->version == CAMSS_8x16 ||
+ 	    camss->res->version == CAMSS_8x39 ||
+ 	    camss->res->version == CAMSS_8x53 ||
+-	    camss->res->version == CAMSS_8x96) {
++	    camss->res->version == CAMSS_8x96 ||
++	    camss->res->version == CAMSS_8998) {
+ 		csiphy->base_clk_mux =
+ 			devm_platform_ioremap_resource_byname(pdev, res->reg[1]);
+ 		if (IS_ERR(csiphy->base_clk_mux))
+@@ -686,7 +687,8 @@ int msm_csiphy_subdev_init(struct camss *camss,
+ 		if (csiphy->rate_set[i])
+ 			continue;
+ 
+-		if (camss->res->version == CAMSS_660) {
++		if (camss->res->version == CAMSS_660 ||
++		    camss->res->version == CAMSS_8998) {
+ 			csiphy->rate_set[i] = csiphy_match_clock_name(clock->name,
+ 								      "csi%d_phy",
+ 								       csiphy->id);
+diff --git a/drivers/media/platform/qcom/camss/camss-ispif.c b/drivers/media/platform/qcom/camss/camss-ispif.c
+index 20ccd7b..fe7ed7f 100644
+--- a/drivers/media/platform/qcom/camss/camss-ispif.c
++++ b/drivers/media/platform/qcom/camss/camss-ispif.c
+@@ -831,7 +831,8 @@ static int ispif_set_stream(struct v4l2_subdev *sd, int enable)
+ 		ispif_config_irq(ispif, intf, vfe, 1);
+ 		if (camss->res->version == CAMSS_8x96 ||
+ 		    camss->res->version == CAMSS_8x53 ||
+-		    camss->res->version == CAMSS_660)
++		    camss->res->version == CAMSS_660 ||
++		    camss->res->version == CAMSS_8998)
+ 			ispif_config_pack(ispif,
+ 					  line->fmt[MSM_ISPIF_PAD_SINK].code,
+ 					  intf, cid, vfe, 1);
+@@ -850,7 +851,8 @@ static int ispif_set_stream(struct v4l2_subdev *sd, int enable)
+ 		mutex_lock(&ispif->config_lock);
+ 		if (camss->res->version == CAMSS_8x96 ||
+ 		    camss->res->version == CAMSS_8x53 ||
+-		    camss->res->version == CAMSS_660)
++		    camss->res->version == CAMSS_660 ||
++		    camss->res->version == CAMSS_8998)
+ 			ispif_config_pack(ispif,
+ 					  line->fmt[MSM_ISPIF_PAD_SINK].code,
+ 					  intf, cid, vfe, 0);
+@@ -1116,7 +1118,8 @@ int msm_ispif_subdev_init(struct camss *camss,
+ 		ispif->line_num = 3;
+ 	else if (camss->res->version == CAMSS_8x96 ||
+ 		 camss->res->version == CAMSS_8x53 ||
+-		 camss->res->version == CAMSS_660)
++		 camss->res->version == CAMSS_660 ||
++		 camss->res->version == CAMSS_8998)
+ 		ispif->line_num = 4;
+ 	else
+ 		return -EINVAL;
+@@ -1137,7 +1140,8 @@ int msm_ispif_subdev_init(struct camss *camss,
+ 					ARRAY_SIZE(ispif_formats_8x16);
+ 		} else if (camss->res->version == CAMSS_8x96 ||
+ 			   camss->res->version == CAMSS_8x53 ||
+-			   camss->res->version == CAMSS_660) {
++			   camss->res->version == CAMSS_660 ||
++			   camss->res->version == CAMSS_8998) {
+ 			ispif->line[i].formats = ispif_formats_8x96;
+ 			ispif->line[i].nformats =
+ 					ARRAY_SIZE(ispif_formats_8x96);
+@@ -1171,7 +1175,8 @@ int msm_ispif_subdev_init(struct camss *camss,
+ 			       IRQF_TRIGGER_RISING, ispif->irq_name, ispif);
+ 	else if (camss->res->version == CAMSS_8x96 ||
+ 		 camss->res->version == CAMSS_8x53 ||
+-		 camss->res->version == CAMSS_660)
++		 camss->res->version == CAMSS_660 ||
++		 camss->res->version == CAMSS_8998)
+ 		ret = devm_request_irq(dev, ispif->irq, ispif_isr_8x96,
+ 			       IRQF_TRIGGER_RISING, ispif->irq_name, ispif);
+ 	else
+diff --git a/drivers/media/platform/qcom/camss/camss-vfe.c b/drivers/media/platform/qcom/camss/camss-vfe.c
+index 55c0a0e..4ebcd93 100644
+--- a/drivers/media/platform/qcom/camss/camss-vfe.c
++++ b/drivers/media/platform/qcom/camss/camss-vfe.c
+@@ -346,6 +346,7 @@ static u32 vfe_src_pad_code(struct vfe_line *line, u32 sink_code,
+ 	case CAMSS_6350:
+ 	case CAMSS_7280:
+ 	case CAMSS_8x96:
++	case CAMSS_8998:
+ 	case CAMSS_8250:
+ 	case CAMSS_8280XP:
+ 	case CAMSS_8300:
+diff --git a/drivers/media/platform/qcom/camss/camss.c b/drivers/media/platform/qcom/camss/camss.c
+index 68491b1..e9b403f 100644
+--- a/drivers/media/platform/qcom/camss/camss.c
++++ b/drivers/media/platform/qcom/camss/camss.c
+@@ -680,6 +680,231 @@ static const struct camss_subdev_resources vfe_res_8x96[] = {
+ 	}
+ };
+ 
++
++static const struct camss_subdev_resources csiphy_res_8998[] = {
++	/* CSIPHY0 */
++	{
++		.regulators = {},
++		.clock = { "top_ahb", "ispif_ahb", "ahb", "csiphy0_timer",
++			   "csi0_phy", "csiphy0" },
++		.clock_rate = { { 0 },
++				{ 0 },
++				{ 0 },
++				{ 100000000, 200000000, 269333333 },
++				{ 274290000, 300000000, 384000000 },
++				{ 0 } },
++		.reg = { "csiphy0", "csiphy0_clk_mux" },
++		.interrupt = { "csiphy0" },
++		.csiphy = {
++			.id = 0,
++			.hw_ops = &csiphy_ops_3ph_1_0,
++			.formats = &csiphy_formats_8x96
++		}
++	},
++
++	/* CSIPHY1 */
++	{
++		.regulators = {},
++		.clock = { "top_ahb", "ispif_ahb", "ahb", "csiphy1_timer",
++			   "csi1_phy", "csiphy1" },
++		.clock_rate = { { 0 },
++				{ 0 },
++				{ 0 },
++				{ 100000000, 200000000, 269333333 },
++				{ 274290000, 300000000, 384000000 },
++				{ 0 } },
++		.reg = { "csiphy1", "csiphy1_clk_mux" },
++		.interrupt = { "csiphy1" },
++		.csiphy = {
++			.id = 1,
++			.hw_ops = &csiphy_ops_3ph_1_0,
++			.formats = &csiphy_formats_8x96
++		}
++	},
++
++	/* CSIPHY2 */
++	{
++		.regulators = {},
++		.clock = { "top_ahb", "ispif_ahb", "ahb", "csiphy2_timer",
++			   "csi2_phy", "csiphy2" },
++		.clock_rate = { { 0 },
++				{ 0 },
++				{ 0 },
++				{ 100000000, 200000000, 269333333 },
++				{ 274290000, 300000000, 384000000 },
++				{ 0 } },
++		.reg = { "csiphy2", "csiphy2_clk_mux" },
++		.interrupt = { "csiphy2" },
++		.csiphy = {
++			.id = 2,
++			.hw_ops = &csiphy_ops_3ph_1_0,
++			.formats = &csiphy_formats_8x96
++		}
++	}
++};
++
++static const struct camss_subdev_resources csid_res_8998[] = {
++	/* CSID0 */
++	{
++		.regulators = {
++			{ .supply = "vdda", .init_load_uA = 0 },
++			{ .supply = "vdd_sec", .init_load_uA = 0 }
++		},
++		.clock = { "top_ahb", "ispif_ahb", "csi0_ahb", "ahb",
++			   "csi0", "csi0_phy", "csi0_pix", "csi0_rdi",
++			   "cphy_csid0" },
++		.clock_rate = { { 0 },
++				{ 0 },
++				{ 0 },
++				{ 0 },
++				{ 274290000, 300000000, 384000000, 576000000 },
++				{ 0 },
++				{ 0 },
++				{ 0 },
++				{ 0 } },
++		.reg = { "csid0" },
++		.interrupt = { "csid0" },
++		.csid = {
++			.hw_ops = &csid_ops_4_7,
++			.parent_dev_ops = &vfe_parent_dev_ops,
++			.formats = &csid_formats_4_7
++		}
++	},
++
++	/* CSID1 */
++	{
++		.regulators = {
++			{ .supply = "vdda", .init_load_uA = 0 },
++			{ .supply = "vdd_sec", .init_load_uA = 0 }
++		},
++		.clock = { "top_ahb", "ispif_ahb", "csi1_ahb", "ahb",
++			   "csi1", "csi1_phy", "csi1_pix", "csi1_rdi",
++			   "cphy_csid1" },
++		.clock_rate = { { 0 },
++				{ 0 },
++				{ 0 },
++				{ 0 },
++				{ 274290000, 300000000, 384000000, 576000000 },
++				{ 0 },
++				{ 0 },
++				{ 0 },
++				{ 0 } },
++		.reg = { "csid1" },
++		.interrupt = { "csid1" },
++		.csid = {
++			.hw_ops = &csid_ops_4_7,
++			.parent_dev_ops = &vfe_parent_dev_ops,
++			.formats = &csid_formats_4_7
++		}
++	},
++
++	/* CSID2 */
++	{
++		.regulators = {
++			{ .supply = "vdda", .init_load_uA = 0 },
++			{ .supply = "vdd_sec", .init_load_uA = 0 }
++		},
++		.clock = { "top_ahb", "ispif_ahb", "csi2_ahb", "ahb",
++			   "csi2", "csi2_phy", "csi2_pix", "csi2_rdi",
++			   "cphy_csid2" },
++		.clock_rate = { { 0 },
++				{ 0 },
++				{ 0 },
++				{ 0 },
++				{ 274290000, 300000000, 384000000, 576000000 },
++				{ 0 },
++				{ 0 },
++				{ 0 },
++				{ 0 } },
++		.reg = { "csid2" },
++		.interrupt = { "csid2" },
++		.csid = {
++			.hw_ops = &csid_ops_4_7,
++			.parent_dev_ops = &vfe_parent_dev_ops,
++			.formats = &csid_formats_4_7
++		}
++	},
++
++	/* CSID3 */
++	{
++		.regulators = {
++			{ .supply = "vdda", .init_load_uA = 0 },
++			{ .supply = "vdd_sec", .init_load_uA = 0 }
++		},
++		.clock = { "top_ahb", "ispif_ahb", "csi3_ahb", "ahb",
++			   "csi3", "csi3_phy", "csi3_pix", "csi3_rdi",
++			   "cphy_csid3" },
++		.clock_rate = { { 0 },
++				{ 0 },
++				{ 0 },
++				{ 0 },
++				{ 274290000, 300000000, 384000000, 576000000 },
++				{ 0 },
++				{ 0 },
++				{ 0 },
++				{ 0 } },
++		.reg = { "csid3" },
++		.interrupt = { "csid3" },
++		.csid = {
++			.hw_ops = &csid_ops_4_7,
++			.parent_dev_ops = &vfe_parent_dev_ops,
++			.formats = &csid_formats_4_7
++		}
++	}
++};
++
++static const struct camss_subdev_resources vfe_res_8998[] = {
++	/* VFE0 */
++	{
++		.regulators = {},
++		.clock = { "top_ahb", "ahb", "vfe0", "csi_vfe0", "vfe_ahb",
++			   "vfe0_ahb", "vfe_axi", "vfe0_stream" },
++		.clock_rate = { { 0 },
++				{ 0 },
++				{ 200000000, 300000000, 320000000, 384000000,
++				  404000000, 480000000, 576000000, 600000000 },
++				{ 0 },
++				{ 0 },
++				{ 0 },
++				{ 0 },
++				{ 0 } },
++		.reg = { "vfe0" },
++		.interrupt = { "vfe0" },
++		.vfe = {
++			.line_num = 3,
++			.has_pd = true,
++			.hw_ops = &vfe_ops_4_8,
++			.formats_rdi = &vfe_formats_rdi_8x96,
++			.formats_pix = &vfe_formats_pix_8x96
++		}
++	},
++
++	/* VFE1 */
++	{
++		.regulators = {},
++		.clock = { "top_ahb", "ahb", "vfe1", "csi_vfe1", "vfe_ahb",
++			   "vfe1_ahb", "vfe_axi", "vfe1_stream" },
++		.clock_rate = { { 0 },
++				{ 0 },
++				{ 200000000, 300000000, 320000000, 384000000,
++				  404000000, 480000000, 576000000, 600000000 },
++				{ 0 },
++				{ 0 },
++				{ 0 },
++				{ 0 },
++				{ 0 } },
++		.reg = { "vfe1" },
++		.interrupt = { "vfe1" },
++		.vfe = {
++			.line_num = 3,
++			.has_pd = true,
++			.hw_ops = &vfe_ops_4_8,
++			.formats_rdi = &vfe_formats_rdi_8x96,
++			.formats_pix = &vfe_formats_pix_8x96
++		}
++	}
++};
++
+ static const struct camss_subdev_resources csiphy_res_2290[] = {
+ 	/* CSIPHY0 */
+ 	{
+@@ -5393,7 +5618,8 @@ static int camss_probe(struct platform_device *pdev)
+ 	if (camss->res->version == CAMSS_8x16 ||
+ 	    camss->res->version == CAMSS_8x39 ||
+ 	    camss->res->version == CAMSS_8x53 ||
+-	    camss->res->version == CAMSS_8x96) {
++	    camss->res->version == CAMSS_8x96 ||
++	    camss->res->version == CAMSS_8998) {
+ 		camss->ispif = devm_kcalloc(dev, 1, sizeof(*camss->ispif), GFP_KERNEL);
+ 		if (!camss->ispif)
+ 			return -ENOMEM;
+@@ -5558,6 +5784,17 @@ static const struct camss_resources msm8996_resources = {
+ 	.vfe_num = ARRAY_SIZE(vfe_res_8x96),
+ };
+ 
++static const struct camss_resources msm8998_resources = {
++	.version = CAMSS_8998,
++	.csiphy_res = csiphy_res_8998,
++	.csid_res = csid_res_8998,
++	.ispif_res = &ispif_res_8x96,
++	.vfe_res = vfe_res_8998,
++	.csiphy_num = ARRAY_SIZE(csiphy_res_8998),
++	.csid_num = ARRAY_SIZE(csid_res_8998),
++	.vfe_num = ARRAY_SIZE(vfe_res_8998),
++};
++
+ static const struct camss_resources qcm2290_resources = {
+ 	.version = CAMSS_2290,
+ 	.csiphy_res = csiphy_res_2290,
+@@ -5749,6 +5986,7 @@ static const struct of_device_id camss_dt_match[] = {
+ 	{ .compatible = "qcom,msm8939-camss", .data = &msm8939_resources },
+ 	{ .compatible = "qcom,msm8953-camss", .data = &msm8953_resources },
+ 	{ .compatible = "qcom,msm8996-camss", .data = &msm8996_resources },
++	{ .compatible = "qcom,msm8998-camss", .data = &msm8998_resources },
+ 	{ .compatible = "qcom,qcm2290-camss", .data = &qcm2290_resources },
+ 	{ .compatible = "qcom,qcs8300-camss", .data = &qcs8300_resources },
+ 	{ .compatible = "qcom,sa8775p-camss", .data = &sa8775p_resources },
+diff --git a/drivers/media/platform/qcom/camss/camss.h b/drivers/media/platform/qcom/camss/camss.h
+index 93d691c..458c1c6 100644
+--- a/drivers/media/platform/qcom/camss/camss.h
++++ b/drivers/media/platform/qcom/camss/camss.h
+@@ -89,6 +89,7 @@ enum camss_version {
+ 	CAMSS_8x39,
+ 	CAMSS_8x53,
+ 	CAMSS_8x96,
++	CAMSS_8998,
+ 	CAMSS_8250,
+ 	CAMSS_8280XP,
+ 	CAMSS_8300,

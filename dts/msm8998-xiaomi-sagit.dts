@@ -225,6 +225,57 @@
 		voltage-max-design-microvolt = <4400000>;
 		charge-full-design-microamp = <3000000>;
 	};
+
+	cam_vaf_vreg: regulator-camera-vaf {
+		compatible = "regulator-fixed";
+		regulator-name = "camera-vaf";
+		regulator-min-microvolt = <2800000>;
+		regulator-max-microvolt = <2800000>;
+		gpio = <&tlmm 29 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		startup-delay-us = <4000>;
+	};
+
+	cam_avdd_vreg: regulator-camera-avdd {
+		compatible = "regulator-fixed";
+		regulator-name = "camera-avdd";
+		regulator-min-microvolt = <2800000>;
+		regulator-max-microvolt = <2800000>;
+		gpio = <&tlmm 80 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		startup-delay-us = <4000>;
+	};
+
+	cam_dvdd_vreg: regulator-camera-dvdd {
+		compatible = "regulator-fixed";
+		regulator-name = "camera-dvdd";
+		pinctrl-names = "default";
+		pinctrl-0 = <&cam_dvdd_gpio_default>;
+		regulator-min-microvolt = <1100000>;
+		regulator-max-microvolt = <1100000>;
+		gpio = <&pm8998_gpios 20 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		startup-delay-us = <4000>;
+	};
+};
+
+&blsp1_i2c6 {
+	clock-frequency = <400000>;
+	status = "okay";
+
+	nq@28 {
+		compatible = "nxp,pn553", "nxp,nxp-nci-i2c";
+		reg = <0x28>;
+
+		interrupt-parent = <&tlmm>;
+		interrupts = <92 IRQ_TYPE_EDGE_RISING>;
+
+		enable-gpios = <&tlmm 12 GPIO_ACTIVE_HIGH>;
+		firmware-gpios = <&tlmm 93 GPIO_ACTIVE_HIGH>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&nfc_int_active_state &nfc_enable_active_state &nfc_fw_active_state>;
+	};
 };
 
 &blsp1_i2c5 {
@@ -337,6 +388,15 @@
 		pins = "gpio13";
 		function = "func2";
 		power-source = <0>;
+	};
+
+	cam_dvdd_gpio_default: cam-dvdd-gpio-default-state {
+		pins = "gpio20";
+		function = "normal";
+		power-source = <1>;
+		bias-disable;
+		drive-push-pull;
+		output-low;
 	};
 };
 
@@ -556,6 +616,13 @@
 &tlmm {
 	gpio-reserved-ranges = <0 4>, <81 4>;
 
+	cci0_default_state: cci0-default-state {
+		pins = "gpio17", "gpio18";
+		function = "cci_i2c";
+		bias-disable;
+		drive-strength = <2>;
+	};
+
 	cci1_default_state: cci1-default-state {
 		pins = "gpio19", "gpio20";
 		function = "cci_i2c";
@@ -631,7 +698,7 @@
 		pins = "gpio92";
 		function = "gpio";
 		drive-strength = <6>;
-		bias-pull-up;
+		bias-pull-down;
 	};
 
 	nfc_int_suspend_state: nfc-int-suspend-state {
@@ -653,6 +720,13 @@
 		function = "gpio";
 		drive-strength = <6>;
 		bias-disable;
+	};
+
+	nfc_fw_active_state: nfc-fw-active-state {
+		pins = "gpio93";
+		function = "gpio";
+		drive-strength = <6>;
+		bias-pull-down;
 	};
 
 	ts_active_state: ts-active-state {
@@ -1254,6 +1328,183 @@
 
 			codec {
 				sound-dai = <&wcd9335 AIF1_CAP>;
+			};
+		};
+	};
+};
+
+&soc {
+	camss: camss@ca00020 {
+		compatible = "qcom,msm8998-camss";
+		reg = <0x0ca00020 0x10>,
+		      <0x0ca30000 0x400>,
+		      <0x0ca30400 0x400>,
+		      <0x0ca30800 0x400>,
+		      <0x0ca30c00 0x400>,
+		      <0x0ca34000 0x1000>,
+		      <0x0ca00030 0x04>,
+		      <0x0ca35000 0x1000>,
+		      <0x0ca00038 0x04>,
+		      <0x0ca36000 0x1000>,
+		      <0x0ca00040 0x04>,
+		      <0x0ca31000 0xc00>,
+		      <0x0ca10000 0x4000>,
+		      <0x0ca14000 0x4000>;
+		reg-names = "csi_clk_mux", "csid0", "csid1", "csid2", "csid3",
+			    "csiphy0", "csiphy0_clk_mux",
+			    "csiphy1", "csiphy1_clk_mux",
+			    "csiphy2", "csiphy2_clk_mux",
+			    "ispif", "vfe0", "vfe1";
+		interrupts = <GIC_SPI 296 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 297 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 298 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 299 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 78 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 79 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 80 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 309 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 314 IRQ_TYPE_EDGE_RISING>,
+			     <GIC_SPI 315 IRQ_TYPE_EDGE_RISING>;
+		interrupt-names = "csid0", "csid1", "csid2", "csid3",
+				  "csiphy0", "csiphy1", "csiphy2",
+				  "ispif", "vfe0", "vfe1";
+		clocks = <&mmcc CAMSS_AHB_CLK>,
+			 <&mmcc CAMSS_CPHY_CSID0_CLK>,
+			 <&mmcc CAMSS_CPHY_CSID1_CLK>,
+			 <&mmcc CAMSS_CPHY_CSID2_CLK>,
+			 <&mmcc CAMSS_CPHY_CSID3_CLK>,
+			 <&mmcc CAMSS_CSI0_AHB_CLK>,
+			 <&mmcc CAMSS_CSI0_CLK>,
+			 <&mmcc CAMSS_CPHY_CSID0_CLK>,
+			 <&mmcc CAMSS_CSI0PIX_CLK>,
+			 <&mmcc CAMSS_CSI0RDI_CLK>,
+			 <&mmcc CAMSS_CSI1_AHB_CLK>,
+			 <&mmcc CAMSS_CSI1_CLK>,
+			 <&mmcc CAMSS_CPHY_CSID1_CLK>,
+			 <&mmcc CAMSS_CSI1PIX_CLK>,
+			 <&mmcc CAMSS_CSI1RDI_CLK>,
+			 <&mmcc CAMSS_CSI2_AHB_CLK>,
+			 <&mmcc CAMSS_CSI2_CLK>,
+			 <&mmcc CAMSS_CPHY_CSID2_CLK>,
+			 <&mmcc CAMSS_CSI2PIX_CLK>,
+			 <&mmcc CAMSS_CSI2RDI_CLK>,
+			 <&mmcc CAMSS_CSI3_AHB_CLK>,
+			 <&mmcc CAMSS_CSI3_CLK>,
+			 <&mmcc CAMSS_CPHY_CSID3_CLK>,
+			 <&mmcc CAMSS_CSI3PIX_CLK>,
+			 <&mmcc CAMSS_CSI3RDI_CLK>,
+			 <&mmcc CAMSS_CSI0PHYTIMER_CLK>,
+			 <&mmcc CAMSS_CSI1PHYTIMER_CLK>,
+			 <&mmcc CAMSS_CSI2PHYTIMER_CLK>,
+			 <&mmcc CAMSS_CSIPHY0_CLK>,
+			 <&mmcc CAMSS_CSIPHY1_CLK>,
+			 <&mmcc CAMSS_CSIPHY2_CLK>,
+			 <&mmcc CAMSS_CSI_VFE0_CLK>,
+			 <&mmcc CAMSS_CSI_VFE1_CLK>,
+			 <&mmcc CAMSS_ISPIF_AHB_CLK>,
+			 <&mmcc CAMSS_TOP_AHB_CLK>,
+			 <&mmcc CAMSS_VFE0_AHB_CLK>,
+			 <&mmcc CAMSS_VFE0_CLK>,
+			 <&mmcc CAMSS_VFE0_STREAM_CLK>,
+			 <&mmcc CAMSS_VFE1_AHB_CLK>,
+			 <&mmcc CAMSS_VFE1_CLK>,
+			 <&mmcc CAMSS_VFE1_STREAM_CLK>,
+			 <&mmcc CAMSS_VFE_VBIF_AHB_CLK>,
+			 <&mmcc CAMSS_VFE_VBIF_AXI_CLK>;
+		clock-names = "ahb",
+			      "cphy_csid0", "cphy_csid1", "cphy_csid2", "cphy_csid3",
+			      "csi0_ahb", "csi0", "csi0_phy", "csi0_pix", "csi0_rdi",
+			      "csi1_ahb", "csi1", "csi1_phy", "csi1_pix", "csi1_rdi",
+			      "csi2_ahb", "csi2", "csi2_phy", "csi2_pix", "csi2_rdi",
+			      "csi3_ahb", "csi3", "csi3_phy", "csi3_pix", "csi3_rdi",
+			      "csiphy0_timer", "csiphy1_timer", "csiphy2_timer",
+			      "csiphy0", "csiphy1", "csiphy2",
+			      "csi_vfe0", "csi_vfe1",
+			      "ispif_ahb", "top_ahb",
+			      "vfe0_ahb", "vfe0", "vfe0_stream",
+			      "vfe1_ahb", "vfe1", "vfe1_stream",
+			      "vfe_ahb", "vfe_axi";
+		iommus = <&mmss_smmu 0xc00>,
+			 <&mmss_smmu 0xc01>,
+			 <&mmss_smmu 0xc02>,
+			 <&mmss_smmu 0xc03>;
+		power-domains = <&mmcc CAMSS_VFE0_GDSC>,
+				<&mmcc CAMSS_VFE1_GDSC>;
+		vdda-supply = <&vreg_l2a_1p2>;
+		vdd_sec-supply = <&vreg_l1a_0p875>;
+		status = "okay";
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+
+				csiphy0_ep: endpoint {
+					clock-lanes = <7>;
+					data-lanes = <0 1 2 3>;
+					remote-endpoint = <&imx386_ep>;
+				};
+			};
+		};
+	};
+
+	cci: cci@ca0c000 {
+		compatible = "qcom,msm8996-cci";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0x0ca0c000 0x1000>;
+		interrupts = <GIC_SPI 295 IRQ_TYPE_EDGE_RISING>;
+		assigned-clocks = <&mmcc CAMSS_CCI_AHB_CLK>,
+				  <&mmcc CAMSS_CCI_CLK>;
+		assigned-clock-rates = <80000000>, <37500000>;
+		clocks = <&mmcc CAMSS_TOP_AHB_CLK>,
+			 <&mmcc CAMSS_CCI_AHB_CLK>,
+			 <&mmcc CAMSS_CCI_CLK>,
+			 <&mmcc CAMSS_AHB_CLK>;
+		clock-names = "camss_top_ahb", "cci_ahb", "cci", "camss_ahb";
+		pinctrl-names = "default";
+		pinctrl-0 = <&cci0_default_state>;
+		power-domains = <&mmcc CAMSS_TOP_GDSC>;
+		status = "okay";
+
+		cci_i2c0: i2c-bus@0 {
+			reg = <0>;
+			clock-frequency = <400000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			ak7371: lens@c {
+				compatible = "asahi-kasei,ak7371";
+				reg = <0x0c>;
+				vio-supply = <&vreg_lvs1a_1p8>;
+				vdd-supply = <&cam_vaf_vreg>;
+			};
+
+			imx386: camera@1a {
+				compatible = "sony,imx386";
+				reg = <0x1a>;
+				clocks = <&mmcc CAMSS_MCLK0_CLK>;
+				assigned-clocks = <&mmcc CAMSS_MCLK0_CLK>;
+				assigned-clock-rates = <24000000>;
+				pinctrl-names = "default";
+				pinctrl-0 = <&msm_mclk0_active_state>;
+				reset-gpios = <&tlmm 30 GPIO_ACTIVE_LOW>;
+				avdd-supply = <&cam_avdd_vreg>;
+				dvdd-supply = <&cam_dvdd_vreg>;
+				dovdd-supply = <&vreg_lvs1a_1p8>;
+				orientation = <1>;
+				rotation = <90>;
+				lens-focus = <&ak7371>;
+
+				port {
+					imx386_ep: endpoint {
+						data-lanes = <1 2 3 4>;
+						link-frequencies = /bits/ 64 <498000000 172000000 385000000 446000000>;
+						remote-endpoint = <&csiphy0_ep>;
+					};
+				};
 			};
 		};
 	};
