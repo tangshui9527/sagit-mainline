@@ -1,0 +1,148 @@
+From: tangshui9527 <tangshui1122@gmail.com>
+Subject: [PATCH] clk: qcom: msm8998: fix mmss gpll0_div, mclk mnd_width, and camss_ahb parent
+
+---
+diff --git a/drivers/clk/qcom/gcc-msm8998.c b/drivers/clk/qcom/gcc-msm8998.c
+index c9701f7..1bea068 100644
+--- a/drivers/clk/qcom/gcc-msm8998.c
++++ b/drivers/clk/qcom/gcc-msm8998.c
+@@ -77,6 +77,19 @@ static struct clk_alpha_pll_postdiv gpll0_out_main = {
+ 	},
+ };
+ 
++static struct clk_fixed_factor gpll0_out_main_div2 = {
++	.mult = 1,
++	.div = 2,
++	.hw.init = &(struct clk_init_data){
++		.name = "gpll0_out_main_div2",
++		.parent_hws = (const struct clk_hw *[]){
++			&gpll0_out_main.clkr.hw,
++		},
++		.num_parents = 1,
++		.ops = &clk_fixed_factor_ops,
++	},
++};
++
+ static struct clk_alpha_pll_postdiv gpll0_out_odd = {
+ 	.offset = 0x0,
+ 	.regs = clk_alpha_pll_regs[CLK_ALPHA_PLL_TYPE_FABIA],
+@@ -1377,7 +1390,7 @@ static struct clk_branch gcc_mmss_gpll0_div_clk = {
+ 		.hw.init = &(struct clk_init_data){
+ 			.name = "gcc_mmss_gpll0_div_clk",
+ 			.parent_hws = (const struct clk_hw *[]) {
+-				&gpll0_out_main.clkr.hw,
++				&gpll0_out_main_div2.hw,
+ 			},
+ 			.num_parents = 1,
+ 			.ops = &clk_branch2_ops,
+@@ -3323,6 +3336,10 @@ static const struct regmap_config gcc_msm8998_regmap_config = {
+ 	.fast_io	= true,
+ };
+ 
++static struct clk_hw *gcc_msm8998_hws[] = {
++	&gpll0_out_main_div2.hw,
++};
++
+ static const struct qcom_cc_desc gcc_msm8998_desc = {
+ 	.config = &gcc_msm8998_regmap_config,
+ 	.clks = gcc_msm8998_clocks,
+@@ -3331,6 +3348,8 @@ static const struct qcom_cc_desc gcc_msm8998_desc = {
+ 	.num_resets = ARRAY_SIZE(gcc_msm8998_resets),
+ 	.gdscs = gcc_msm8998_gdscs,
+ 	.num_gdscs = ARRAY_SIZE(gcc_msm8998_gdscs),
++	.clk_hws = gcc_msm8998_hws,
++	.num_clk_hws = ARRAY_SIZE(gcc_msm8998_hws),
+ };
+ 
+ static int gcc_msm8998_probe(struct platform_device *pdev)
+diff --git a/drivers/clk/qcom/mmcc-msm8998.c b/drivers/clk/qcom/mmcc-msm8998.c
+index 5c37be7..8cac2ce 100644
+--- a/drivers/clk/qcom/mmcc-msm8998.c
++++ b/drivers/clk/qcom/mmcc-msm8998.c
+@@ -887,6 +887,7 @@ static const struct freq_tbl ftbl_mclk_clk_src[] = {
+ 
+ static struct clk_rcg2 mclk0_clk_src = {
+ 	.cmd_rcgr = 0x3360,
++	.mnd_width = 8,
+ 	.hid_width = 5,
+ 	.parent_map = mmss_xo_mmpll4_mmpll7_mmpll10_gpll0_gpll0_div_map,
+ 	.freq_tbl = ftbl_mclk_clk_src,
+@@ -900,6 +901,7 @@ static struct clk_rcg2 mclk0_clk_src = {
+ 
+ static struct clk_rcg2 mclk1_clk_src = {
+ 	.cmd_rcgr = 0x3390,
++	.mnd_width = 8,
+ 	.hid_width = 5,
+ 	.parent_map = mmss_xo_mmpll4_mmpll7_mmpll10_gpll0_gpll0_div_map,
+ 	.freq_tbl = ftbl_mclk_clk_src,
+@@ -913,6 +915,7 @@ static struct clk_rcg2 mclk1_clk_src = {
+ 
+ static struct clk_rcg2 mclk2_clk_src = {
+ 	.cmd_rcgr = 0x33c0,
++	.mnd_width = 8,
+ 	.hid_width = 5,
+ 	.parent_map = mmss_xo_mmpll4_mmpll7_mmpll10_gpll0_gpll0_div_map,
+ 	.freq_tbl = ftbl_mclk_clk_src,
+@@ -926,6 +929,7 @@ static struct clk_rcg2 mclk2_clk_src = {
+ 
+ static struct clk_rcg2 mclk3_clk_src = {
+ 	.cmd_rcgr = 0x33f0,
++	.mnd_width = 8,
+ 	.hid_width = 5,
+ 	.parent_map = mmss_xo_mmpll4_mmpll7_mmpll10_gpll0_gpll0_div_map,
+ 	.freq_tbl = ftbl_mclk_clk_src,
+@@ -2003,6 +2007,22 @@ static struct clk_branch camss_top_ahb_clk = {
+ 	},
+ };
+ 
++static struct clk_branch mnoc_ahb_clk = {
++	.halt_reg = 0x5024,
++	.halt_check = BRANCH_HALT_SKIP,
++	.clkr = {
++		.enable_reg = 0x5024,
++		.enable_mask = BIT(0),
++		.hw.init = &(struct clk_init_data){
++			.name = "mnoc_ahb_clk",
++			.parent_hws = (const struct clk_hw *[]){ &ahb_clk_src.clkr.hw },
++			.num_parents = 1,
++			.ops = &clk_branch2_ops,
++			.flags = CLK_SET_RATE_PARENT,
++		},
++	},
++};
++
+ static struct clk_branch camss_ahb_clk = {
+ 	.halt_reg = 0x348c,
+ 	.clkr = {
+@@ -2010,7 +2030,7 @@ static struct clk_branch camss_ahb_clk = {
+ 		.enable_mask = BIT(0),
+ 		.hw.init = &(struct clk_init_data){
+ 			.name = "camss_ahb_clk",
+-			.parent_hws = (const struct clk_hw *[]){ &ahb_clk_src.clkr.hw },
++			.parent_hws = (const struct clk_hw *[]){ &mnoc_ahb_clk.clkr.hw },
+ 			.num_parents = 1,
+ 			.ops = &clk_branch2_ops,
+ 			.flags = CLK_SET_RATE_PARENT,
+@@ -2435,22 +2455,6 @@ static struct clk_branch fd_ahb_clk = {
+ 	},
+ };
+ 
+-static struct clk_branch mnoc_ahb_clk = {
+-	.halt_reg = 0x5024,
+-	.halt_check = BRANCH_HALT_SKIP,
+-	.clkr = {
+-		.enable_reg = 0x5024,
+-		.enable_mask = BIT(0),
+-		.hw.init = &(struct clk_init_data){
+-			.name = "mnoc_ahb_clk",
+-			.parent_hws = (const struct clk_hw *[]){ &ahb_clk_src.clkr.hw },
+-			.num_parents = 1,
+-			.ops = &clk_branch2_ops,
+-			.flags = CLK_SET_RATE_PARENT,
+-		},
+-	},
+-};
+-
+ static struct clk_branch bimc_smmu_ahb_clk = {
+ 	.halt_reg = 0xe004,
+ 	.halt_check = BRANCH_HALT_SKIP,

@@ -1459,11 +1459,15 @@
 		assigned-clocks = <&mmcc CAMSS_CCI_AHB_CLK>,
 				  <&mmcc CAMSS_CCI_CLK>;
 		assigned-clock-rates = <80000000>, <37500000>;
-		clocks = <&mmcc CAMSS_TOP_AHB_CLK>,
+		clocks = <&mmcc MNOC_AHB_CLK>,
+			 <&mmcc BIMC_SMMU_AHB_CLK>,
+			 <&mmcc BIMC_SMMU_AXI_CLK>,
+			 <&mmcc CAMSS_TOP_AHB_CLK>,
 			 <&mmcc CAMSS_CCI_AHB_CLK>,
 			 <&mmcc CAMSS_CCI_CLK>,
 			 <&mmcc CAMSS_AHB_CLK>;
-		clock-names = "camss_top_ahb", "cci_ahb", "cci", "camss_ahb";
+		clock-names = "mnoc_ahb", "bimc_smmu_ahb", "bimc_smmu_axi",
+			      "camss_top_ahb", "cci_ahb", "cci", "camss_ahb";
 		pinctrl-names = "default";
 		pinctrl-0 = <&cci0_default_state>;
 		power-domains = <&mmcc CAMSS_TOP_GDSC>;
