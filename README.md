@@ -44,11 +44,15 @@
 ### 3. Wi-Fi 高负载防崩溃补丁（`ath10k_snoc`）
 - 在持续高速下载或高并发网络下，原厂固件在解包 AMSDU 时会导致 Hexagon DSP 发生看门狗复位。本项目集成了 `0001-ath10k-persist-split-amsdu.patch`，强制将 A-MSDU 分割转交内核处理，彻底根治基带崩溃。
 
-### 4. 稳健的无头调试与应急救援通道
+### 4. 无网络自动回落热点配网（Fallback AP & Captive Portal）
+- **Reboot-to-AP 架构**：高通 WCN3990 (`ath10k_snoc`) 驱动在运行时动态切换 STA/AP 模式易触发 QMI `-108` 固件异常，因此采用 `mi6-wifi-manager` 状态机在 `normal`（正常联网）与 `rescue`（独立 `hostapd` 应急热点）间通过安全重启切换。
+- **自动触发与防失联保护**：正常模式下开机等待 45 秒宽限期后，若断网超过 60 秒自动切入 `rescue` 模式发射热点 `Mi6-Setup-AP`（默认密码配置见 `/etc/hostapd/mi6-ap.conf`，默认样例为 `sagitsetup123`，可自行修改）；由独立 `dnsmasq`（`10.42.0.1/24`）提供权威 DHCP 与域名劫持，自动弹出配网网页（`http://10.42.0.1`），支持明文核对密码并保留固定 MAC；若 300 秒无设备连接，自动恢复 `normal` 模式并重启回连原 Wi-Fi。
+
+### 5. 稳健的无头调试与应急救援通道
 - **免密物理串口**：USB CDC-ACM 设备自动绑定串口终端 `/dev/cu.usbmodem21201`，无网络状态下插入电脑即可获取 root shell。
 - **内置免按键安全重启**：在系统内提供 `/usr/local/bin/reboot-fastboot` 与 `reboot-recovery`，利用 Qualcomm PM8998 PON 软复位寄存器精确跳转，告别长按物理电源键与音量键。
 
-### 5. PMI8998 真·旁路供电与电池保护（Bypass Charging / Idle Mode）
+### 6. PMI8998 真·旁路供电与电池保护（Bypass Charging / Idle Mode）
 - **内核驱动扩展（`0004-qcom-smbx-bypass-charging.patch`）**：为上游 `qcom_smbx` 驱动新增主线标准的 `charge_behaviour`（`auto` / `inhibit-charge`）与可写 `constant_charge_current_max`（`0–3200000 uA`，`25 mA` 步进）节点。
 - **硬件真旁路原理**：切换为 `inhibit-charge` 时，驱动清零 SMB2 寄存器 `CHARGING_ENABLE_CMD`（`0x1042` bit 0）切断电池充电回路，同时保持 `USBIN` 通路开启（`online=1`），继续通过 Buck 直接为主板 `VPH_PWR` 供电；实测电池电流从充电状态降至约 `12–13 mA`（`Not charging`），实现真正意义上的不伤电池旁路运行。
 - **7×24 小时自动迟滞保护（`mi6-battery-guard`）**：系统守护进程默认在电量 `>= 80%` 时自动切换至 `inhibit-charge` 旁路供电，在电量 `<= 70%` 时自动恢复 `auto` 充电，避免长期插电导致锂电池鼓包衰减。
@@ -72,10 +76,13 @@
 │   └── 0004-qcom-smbx-bypass-charging.patch         # PMI8998 SMB2 真旁路供电与限流补丁
 └── rootfs-integration/         # 注入 Debian 根文件系统的配置文件与守护脚本
     ├── alsa/                   # asound.conf 及 UCM2 硬件音频配置文件
-    ├── bin/                    # 实用脚本 (mi6-init-bt.sh, reboot-fastboot 等)
-    ├── systemd/                # 自定义 systemd 服务 (mi6-bluetooth, mi6-battery-guard 等)
+    ├── bin/                    # 实用脚本 (mi6-init-bt.sh, mi6-wifi-manager, mi6-wifi-portal, reboot-fastboot 等)
+    ├── hostapd/                # Rescue AP hostapd 配置模板 (Mi6-Setup-AP)
+    ├── mi6-fallback/           # Rescue 模式独立 dnsmasq 配置 (10.42.0.1/24 + Captive Portal)
+    ├── nginx/                  # Captive Portal 反向代理配置
+    ├── systemd/                # 自定义 systemd 服务 (mi6-bluetooth, mi6-battery-guard, mi6-wifi-manager 等)
     ├── udev/rules.d/           # UFS 存储 UNMAP TRIM 规则 (60-ufs-unmap.rules)
-    └── NetworkManager/         # USB NCM 与 Wi-Fi 预设网络连接
+    └── NetworkManager/         # USB NCM、MAC 锁定与 Wi-Fi 预设配置
 ```
 
 ---

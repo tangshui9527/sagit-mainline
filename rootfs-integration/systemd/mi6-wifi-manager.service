@@ -1,0 +1,13 @@
+[Unit]
+Description=Mi 6 Smart Wi-Fi & Rescue Manager
+After=local-fs.target NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mi6-wifi-manager
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

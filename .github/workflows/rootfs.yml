@@ -48,9 +48,10 @@ jobs:
           # Qualcomm userspace & BT/Audio tools (may not all exist in trixie; record what lands)
           sudo chroot rootfs /bin/sh -c '
             DEBIAN_FRONTEND=noninteractive apt-get update -qq &&
-            for p in qrtr pd-mapper rmtfs tqftpserv bluez alsa-utils bluez-alsa-utils i2c-tools; do
+            for p in qrtr pd-mapper rmtfs tqftpserv bluez alsa-utils bluez-alsa-utils i2c-tools hostapd dnsmasq-base nginx iw psmisc; do
               apt-get install -y --no-install-recommends $p || echo "SKIP: $p not in trixie";
             done'
+          sudo rm -f rootfs/etc/systemd/system/multi-user.target.wants/hostapd.service
           echo "qualcomm userspace:" && ls rootfs/usr/bin | grep -E '^(qrtr|pd-mapper|rmtfs|tqftpserv)' || true
 
       - name: Integrate device config
@@ -64,6 +65,9 @@ jobs:
           sudo cp rootfs-integration/NetworkManager/mi6-usb.nmconnection rootfs/etc/NetworkManager/system-connections/
           sudo chmod 600 rootfs/etc/NetworkManager/system-connections/mi6-usb.nmconnection
           sudo cp rootfs-integration/NetworkManager/99-mi6-ncm-mac.conf rootfs/etc/NetworkManager/conf.d/ || true
+          if [ -f rootfs-integration/NetworkManager/00-mac-clamping.conf ]; then
+            sudo cp rootfs-integration/NetworkManager/00-mac-clamping.conf rootfs/etc/NetworkManager/conf.d/
+          fi
           if [ -f rootfs-integration/NetworkManager/disable-powersave.conf ]; then
             sudo cp rootfs-integration/NetworkManager/disable-powersave.conf rootfs/etc/NetworkManager/conf.d/
           fi
@@ -129,7 +133,13 @@ jobs:
           sudo mkdir -p rootfs/usr/local/bin rootfs/usr/local/sbin
           sudo cp rootfs-integration/sbin/mi6-usb-gadget   rootfs/usr/local/sbin/
           sudo cp rootfs-integration/sbin/mi6-grow-rootfs  rootfs/usr/local/sbin/
-          for f in mi6-battery-guard mi6-init-bt.sh mi6-wifi-fallback mi6-wifi-portal reboot-fastboot reboot-recovery; do
+          for f in mi6-start-fallback-ap mi6-stop-fallback-ap; do
+            if [ -f "rootfs-integration/sbin/$f" ]; then
+              sudo cp "rootfs-integration/sbin/$f" rootfs/usr/local/sbin/
+              sudo chmod 755 "rootfs/usr/local/sbin/$f"
+            fi
+          done
+          for f in mi6-battery-guard mi6-init-bt.sh mi6-wifi-manager mi6-wifi-portal reboot-fastboot reboot-recovery; do
             if [ -f "rootfs-integration/bin/$f" ]; then
               sudo cp "rootfs-integration/bin/$f" rootfs/usr/local/bin/
               sudo chmod 755 "rootfs/usr/local/bin/$f"
@@ -151,14 +161,18 @@ jobs:
             sudo cp rootfs-integration/systemd/mi6-battery-guard.service rootfs/etc/systemd/system/
             sudo ln -sf /etc/systemd/system/mi6-battery-guard.service rootfs/etc/systemd/system/multi-user.target.wants/mi6-battery-guard.service
           fi
-          if [ -f rootfs-integration/systemd/mi6-wifi-fallback.service ]; then
-            sudo cp rootfs-integration/systemd/mi6-wifi-fallback.service rootfs/etc/systemd/system/
+          if [ -f rootfs-integration/systemd/mi6-wifi-manager.service ]; then
+            sudo cp rootfs-integration/systemd/mi6-wifi-manager.service rootfs/etc/systemd/system/
             sudo cp rootfs-integration/systemd/mi6-wifi-portal.service rootfs/etc/systemd/system/
-            sudo ln -sf /etc/systemd/system/mi6-wifi-fallback.service rootfs/etc/systemd/system/multi-user.target.wants/mi6-wifi-fallback.service
+            sudo ln -sf /etc/systemd/system/mi6-wifi-manager.service rootfs/etc/systemd/system/multi-user.target.wants/mi6-wifi-manager.service
           fi
-          if [ -d rootfs-integration/NetworkManager/dnsmasq-shared.d ]; then
-            sudo mkdir -p rootfs/etc/NetworkManager/dnsmasq-shared.d
-            sudo cp -r rootfs-integration/NetworkManager/dnsmasq-shared.d/* rootfs/etc/NetworkManager/dnsmasq-shared.d/
+          if [ -d rootfs-integration/hostapd ]; then
+            sudo mkdir -p rootfs/etc/hostapd
+            sudo cp -r rootfs-integration/hostapd/* rootfs/etc/hostapd/
+          fi
+          if [ -d rootfs-integration/mi6-fallback ]; then
+            sudo mkdir -p rootfs/etc/mi6-fallback
+            sudo cp -r rootfs-integration/mi6-fallback/* rootfs/etc/mi6-fallback/
           fi
           if [ -d rootfs-integration/nginx ]; then
             sudo mkdir -p rootfs/etc/nginx/sites-available rootfs/etc/nginx/sites-enabled

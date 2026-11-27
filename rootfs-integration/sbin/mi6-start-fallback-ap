@@ -1,0 +1,26 @@
+#!/bin/bash
+echo "[Fallback] Switching to Hostapd AP mode..."
+nmcli dev set wlan0 managed no 2>/dev/null
+systemctl stop wpa_supplicant 2>/dev/null
+killall -9 wpa_supplicant 2>/dev/null
+sleep 1
+
+ip addr flush dev wlan0
+ip link set wlan0 down
+mkdir -p /run/hostapd
+sleep 1
+
+killall -9 hostapd 2>/dev/null
+hostapd -B /etc/hostapd/mi6-ap.conf -P /run/mi6-hostapd.pid -f /var/log/mi6-hostapd.log
+sleep 2
+
+ip addr add 10.42.0.1/24 broadcast 10.42.0.255 dev wlan0
+ip link set wlan0 up
+
+killall -9 dnsmasq 2>/dev/null
+dnsmasq -C /etc/mi6-fallback/dnsmasq.conf -x /run/mi6-dnsmasq.pid -u root
+
+systemctl start mi6-wifi-portal 2>/dev/null
+systemctl reload-or-restart nginx 2>/dev/null
+
+echo "[Fallback] Hostapd AP started on wlan0 (SSID: Mi6-Setup-AP, IP: 10.42.0.1)"

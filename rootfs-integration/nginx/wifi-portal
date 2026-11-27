@@ -1,6 +1,6 @@
 server {
-    listen 80;
-    server_name 192.168.12.1 setup.local wifi.local connectivitycheck.gstatic.com clients3.google.com captive.apple.com msftconnecttest.com;
+    listen 10.42.0.1:80 default_server;
+    server_name _;
 
     location / {
         proxy_pass http://127.0.0.1:8088;
